@@ -489,7 +489,7 @@ impl TokenBlock{
         return Ok(dump);
     }
 
-    pub fn parse(data:&[u8],block_size:u64) -> Result<TokenBlock,&'static str>{
+    pub fn parse(data:&[u8],block_size:u32) -> Result<TokenBlock,&'static str>{
         
         let mut offset:usize = 0;
         let mut token_signature:String = String::new();

@@ -1,17 +1,11 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
 #![allow(non_snake_case)]
 use num_bigint::BigUint;
 use sha2::{Sha256, Digest};
 use std::convert::TryInto;
 use crate::Tools;
-use crate::merkletree;
 use crate::Transaction;
 use crate::Token;
 use crate::Block;
-use base64;
-use byteorder::{BigEndian, ReadBytesExt};
-use std::mem::transmute;
 use std::mem::transmute_copy;
 use zstd;
 
@@ -235,17 +229,10 @@ impl MainChain{
         let first_block_hash = &blocks[0].get_hash();
         let result = self.lookup_table.get(first_block_hash);
         let mut filename = self.config.amount_of_files;
+        let mut file_was_found:bool = false;
         if result.is_some(){
             filename = *result.unwrap();
-        }else{
-            self.lookup_table.insert(*first_block_hash, 
-                                            filename);
-            self.config.amount_of_files += 1;
-        }
-
-        for block in blocks[1..].iter(){
-            self.lookup_table.insert(block.get_hash(), 
-                                            filename);
+            file_was_found = true;
         }
 
         let path = String::from(MAIN_BLOCKS_DIRECTORY) + &filename.to_string();
@@ -253,6 +240,14 @@ impl MainChain{
         let result = compress_to_file(path, &to_dump);
         if result.is_err(){
             return Err("Could not save file");
+        }
+
+        if !file_was_found{
+            self.config.amount_of_files += 1;
+        }
+        for block in blocks.iter(){
+            self.lookup_table.insert(block.get_hash(), 
+                                            filename);
         }
 
         return Ok(());
@@ -431,63 +426,145 @@ impl DerivativeChain{
             blocks:&[Block::TransactionBlock])->
             Result<(),&'static str>{
 
-    let blocks_amount = blocks.len();
+        let blocks_amount = blocks.len();
 
-    if blocks_amount > BLOCKS_IN_FILE 
-            || blocks_amount == 0{
-        return Err("Wrong");
-    }
-
-    let mut dump_data_size:usize = 1 + (blocks_amount*4);
-    for block in blocks.iter(){
-        let dump_size = block.get_dump_size();
-        dump_data_size += dump_size;
-    }
-
-    let mut to_dump:Vec<u8> = Vec::with_capacity(dump_data_size);
-
-    to_dump.push(blocks_amount as u8);
-
-    for block in blocks.iter(){
-        let result = block.dump();
-        if result.is_err(){
-            return Err("Error dumping block");
+        if blocks_amount > BLOCKS_IN_FILE 
+                || blocks_amount == 0{
+            return Err("Wrong");
         }
 
-        let mut dump = result.unwrap();
+        let mut dump_data_size:usize = 1 + (blocks_amount*4);
+        for block in blocks.iter(){
+            let dump_size = block.get_dump_size();
+            dump_data_size += dump_size;
+        }
 
-        to_dump.extend((dump.len() as u32).to_be_bytes().iter());
+        let mut to_dump:Vec<u8> = Vec::with_capacity(dump_data_size);
 
-        to_dump.append(&mut dump);
+        to_dump.push(blocks_amount as u8);
+
+        for block in blocks.iter(){
+            let result = block.dump();
+            if result.is_err(){
+                return Err("Error dumping block");
+            }
+
+            let mut dump = result.unwrap();
+
+            to_dump.extend((dump.len() as u32).to_be_bytes().iter());
+
+            to_dump.append(&mut dump);
+        }
+
+        let first_block_hash = &blocks[0].get_hash();
+        let result = self.lookup_table.get(first_block_hash);
+        let mut filename = self.config.amount_of_files;
+        let mut file_was_found:bool = false;
+        if result.is_some(){
+            filename = *result.unwrap();
+            file_was_found = true;
+        }
+
+        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) + 
+                        &self.pathname.to_string() + "/" + 
+                        &filename.to_string();
+
+
+        let result = compress_to_file(path, &to_dump);
+        if result.is_err(){
+            return Err("Could not save file");
+        }
+
+        if !file_was_found{
+            self.config.amount_of_files += 1;
+        }
+
+        for block in blocks.iter(){
+            self.lookup_table.insert(block.get_hash(), 
+                                            filename);
+        }
+
+        return Ok(());
     }
 
-    let first_block_hash = &blocks[0].get_hash();
-    let result = self.lookup_table.get(first_block_hash);
-    let mut filename = self.config.amount_of_files;
-    if result.is_some(){
-        filename = *result.unwrap();
-    }else{
-        self.lookup_table.insert(*first_block_hash, 
-                                    filename);
-        self.config.amount_of_files += 1;
+    pub fn parse_blocks(&self,hash:&[u8;32]) -> Result<Vec<Block::TokenBlock>,&'static str>{
+        let result = self.lookup_table.get(hash);
+        if result.is_none(){
+            return Err("Could not locate file");
+        }
+        let filename = result.unwrap();
+
+        let result = self.get_blocks_by_index(*filename);
+        if result.is_err(){
+            return Err("Error parsing blocks");
+        }
+
+        return Ok(result.unwrap());
+
     }
 
-    for block in blocks[1..].iter(){
-    self.lookup_table.insert(block.get_hash(), 
-                                    filename);
+    pub fn get_blocks_by_height(&self,height:u64) -> Result<Vec<Block::TokenBlock>,&'static str>{
+        let index = height % 4;
+        let result = self.get_blocks_by_index(index);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        return Ok(result.unwrap());
     }
 
-    let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) + 
-                    &self.pathname.to_string() + "/" + 
-                    &filename.to_string();
+    pub fn get_blocks_by_index(&self,index:u64) -> Result<Vec<Block::TokenBlock>,&'static str>{
+        if index >= self.config.amount_of_files{
+            return Err("Bad index");
+        }
 
+        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) + 
+                        &self.pathname.to_string() + "/" + 
+                        &index.to_string();
 
-    let result = compress_to_file(path, &to_dump);
-    if result.is_err(){
-    return Err("Could not save file");
+        let result = decompress_from_file(path);
+        if result.is_err(){
+            return Err("Could not decompress file");
+        }
+
+        let decompressed_data = result.unwrap();
+        let size_of_data = decompressed_data.len();
+        if size_of_data == 0{
+            return Err("Empty file");
+        }
+        let amount:usize = decompressed_data[0] as usize;
+
+        let mut to_return:Vec<Block::TokenBlock> = Vec::with_capacity(amount);
+        let mut offset:usize = 1;
+        for _ in 0..amount{
+            if size_of_data - offset < 4{
+                return Err("Could not parse size of block");
+            }
+            let mut block_size:u32 = (decompressed_data[offset] as u32)<<24;
+            offset += 1;
+            block_size += (decompressed_data[offset] as u32)<<16;
+            offset += 1;
+            block_size += (decompressed_data[offset] as u32)<<8;
+            offset += 1;
+            block_size += decompressed_data[offset] as u32;
+            offset += 1;
+
+            if size_of_data - offset < block_size as usize{
+                return Err("Could not parse block");
+            }
+
+            let result = Block::TokenBlock::parse(&decompressed_data[offset..offset+block_size as usize],
+                                                        block_size);
+            
+            if result.is_err(){
+                return Err("could not parse block");
+            }
+
+            offset += block_size as usize;
+            to_return.push(result.unwrap());
+        }
+
+        return Ok(to_return);
     }
 
-    return Ok(());
-    }
-
+    
 }
