@@ -20,7 +20,7 @@ static BLOCKS_IN_FILE:usize = 4;
 static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/"; 
 static MAIN_BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
 static DERIVATIVE_BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/";
-static CONFIG_FILE:&'static str = "BlockChainTree.config";
+static CONFIG_FILE:&'static str = "Chain.config";
 static LOOKUP_TABLE_FILE:&'static str = "LookUPTable.dat"; 
 static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
                                 0x67,0x57,0x8e,0x85,
@@ -565,6 +565,10 @@ impl DerivativeChain{
 
         return Ok(to_return);
     }
+}
 
-    
+
+pub struct BlockChainTree{
+    lookup_table:HashMap<String,u64>,
+    main_chain:MainChain,
 }
