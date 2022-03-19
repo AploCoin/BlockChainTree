@@ -15,6 +15,7 @@ use std::io;
 use std::io::Write;
 use std::io::Read;
 use std::collections::HashMap;
+use std::str;
 
 static BLOCKS_IN_FILE:usize = 4;
 static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/"; 
@@ -86,7 +87,9 @@ pub fn read_lookup_table(file_path:String) ->
                     Result<HashMap<[u8;32],u64>,&'static str>{
 
     let result = decompress_from_file(file_path);
-    
+    if result.is_err(){
+        return Err("Error decompressing data");
+    }
 
     let decompressed_data = result.unwrap();
 
@@ -571,4 +574,58 @@ impl DerivativeChain{
 pub struct BlockChainTree{
     lookup_table:HashMap<String,u64>,
     main_chain:MainChain,
+}
+
+impl BlockChainTree{
+    fn read_lookup_table(file_path:String) -> 
+                        Result<HashMap<String,u64>,&'static str>{
+
+        let result = decompress_from_file(file_path);
+        if result.is_err(){
+            return Err("Error decompressing data");
+        }
+
+        let decompressed_data = result.unwrap();
+
+        let mut lookup_table_files:HashMap<String,u64> = HashMap::new();
+
+        let mut offset:usize = 0;
+
+        while offset != decompressed_data.len(){
+            if decompressed_data.len()-offset <= 8{
+                return Err("Could not parse value");
+            }
+            let value:u64 = unsafe{ transmute_copy::<u8,u64>(&decompressed_data[offset])};
+            offset += 8;
+            
+            let mut string_end = offset;
+            while decompressed_data[string_end] != 0{
+                if string_end == decompressed_data.len(){
+                    return Err("Could not parse key");
+                }
+                string_end += 1;
+            }
+            string_end += 1;
+
+            unsafe{
+                let key = String::from(str::from_utf8_unchecked(&decompressed_data[offset..string_end]));
+                lookup_table_files.insert(key,value);
+            }
+            
+            offset = string_end + 1;
+
+        }
+
+        return Ok(lookup_table_files);
+    }
+
+    fn dump_lookup_table(&self,
+                    file_path:String) -> 
+                        Result<(),&'static str>{
+
+        
+    }
+    pub fn with_config(){
+
+    }
 }
