@@ -19,10 +19,14 @@ use std::str;
 
 static BLOCKS_IN_FILE:usize = 4;
 static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/"; 
-static MAIN_BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
+
+static MAIN_BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/MAIN/BLOCKS/";
+static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/CHAIN/";
+
 static DERIVATIVE_BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/";
+
 static CONFIG_FILE:&'static str = "Chain.config";
-static LOOKUP_TABLE_FILE:&'static str = "LookUPTable.dat"; 
+static LOOKUP_TABLE_FILE:&'static str = "LookUpTable.dat"; 
 static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
                                 0x67,0x57,0x8e,0x85,
                                 0x39,0xa9,0xcf,0xe0,
@@ -101,8 +105,8 @@ pub fn read_lookup_table(file_path:String) ->
 
     let mut offset = 0;
     while offset < decompressed_data.len(){
-        let key:[u8;32] = unsafe{ transmute_copy::<u8,[u8;32]>(&decompressed_data[offset])};
-        let value:u64 = unsafe{ transmute_copy::<u8,u64>(&decompressed_data[offset+32])};
+        let key:[u8;32] = unsafe{ transmute_copy(&decompressed_data[offset])};
+        let value:u64 = unsafe{ transmute_copy(&decompressed_data[offset+32])};
             
         lookup_table_files.insert(key,value);
         offset += 40;
@@ -333,13 +337,19 @@ impl MainChain{
     }
 
     pub fn dump_config(&self) -> Result<(),&'static str>{
-        let result = self.config.dump(String::from(CONFIG_FILE));
+
+        let config_path = String::from(MAIN_CHAIN_DIRECTORY) 
+                    + CONFIG_FILE;
+        let table_path = String::from(MAIN_CHAIN_DIRECTORY) 
+                    + LOOKUP_TABLE_FILE;
+
+        let result = self.config.dump(String::from(config_path));
         if result.is_err(){
             return Err("Error dumping config");
         }
 
         let result = dump_lookup_table(&self.lookup_table,
-                        String::from(LOOKUP_TABLE_FILE));
+                                        table_path);
         if result.is_err(){
             return Err("Error dumping lookup table");
         }
@@ -349,13 +359,18 @@ impl MainChain{
 
     pub fn with_config() -> Result<MainChain,&'static str>{
 
-        let result = Config::read(String::from(CONFIG_FILE));
+        let config_path = String::from(MAIN_CHAIN_DIRECTORY) 
+                    + CONFIG_FILE;
+        let table_path = String::from(MAIN_CHAIN_DIRECTORY) 
+                    + LOOKUP_TABLE_FILE;
+
+        let result = Config::read(String::from(config_path));
         if result.is_err(){
             return Err("Error reading config");
         }
         let config = result.unwrap();
 
-        let result = read_lookup_table(String::from(LOOKUP_TABLE_FILE));
+        let result = read_lookup_table(String::from(table_path));
         if result.is_err(){
             return Err("Error reading lookup table");
         }
@@ -577,9 +592,10 @@ pub struct BlockChainTree{
 }
 
 impl BlockChainTree{
-    fn read_lookup_table(file_path:String) -> 
-                        Result<HashMap<[u8;33],u64>,&'static str>{
-
+    fn read_lookup_table() -> Result<HashMap<[u8;33],u64>,&'static str>{
+        
+        let file_path = String::from(BLOCKS_DIRECTORY)
+                            + LOOKUP_TABLE_FILE;
         let result = decompress_from_file(file_path);
         if result.is_err(){
             return Err("Error decompressing data");
@@ -608,15 +624,49 @@ impl BlockChainTree{
         return Ok(lookup_table_files);
     }
 
-    // fn dump_lookup_table(&self,
-    //                 file_path:String) -> 
-    //                     Result<(),&'static str>{
+    fn dump_lookup_table(&self) -> Result<(),&'static str>{
 
+        let file_path = String::from(BLOCKS_DIRECTORY)
+                            + LOOKUP_TABLE_FILE;
+        let mut data_to_compress:Vec<u8> = Vec::with_capacity(self.lookup_table.len()*41);
+        for (key,value) in self.lookup_table.iter(){
+            for byte in key{
+                data_to_compress.push(*byte);
+            }
+            for byte in value.to_be_bytes(){
+                data_to_compress.push(byte);
+            }
+        }
+                        
+        let result = compress_to_file(String::from(file_path), 
+                                                                &data_to_compress);
+        if result.is_err(){
+            return Err("Error compressing and dumping lookup table");
+        }
+                                                        
+        return Ok(());
         
-    //     let mut to_compress:Vec<u8> = Vec::with_capacity(table.len()*40);
-        
-    // }
-    pub fn with_config(){
-
     }
+
+    pub fn with_config() -> Result<BlockChainTree,&'static str>{
+        // read main chain
+        let result = MainChain::with_config();
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let main_chain = result.unwrap();
+
+        // read lookup table
+        let result = BlockChainTree::read_lookup_table();
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let lookup_table = result.unwrap();
+
+        return Ok(BlockChainTree{lookup_table:lookup_table,
+                                main_chain:main_chain});
+    }
+
+    
+
 }
