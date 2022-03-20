@@ -8,6 +8,7 @@ use crate::Token;
 use base64;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::mem::transmute;
+use std::mem::transmute_copy;
 
 
 #[macro_export]
@@ -20,7 +21,7 @@ macro_rules! bytes_to_u64  {
 static ALREADY_SET:&str = "data is already set";
 
 pub struct BasicInfo{
-    miner:String,
+    miner:[u8;33],
     timestamp:u64,
     PoW:BigUint,
     previous_hash:[u8;32],
@@ -30,7 +31,7 @@ pub struct BasicInfo{
 
 
 impl BasicInfo{
-    pub fn new(miner:String,
+    pub fn new(miner:[u8;33],
                 timestamp:u64,
                 PoW:BigUint,
                 previous_hash:[u8;32],
@@ -45,33 +46,24 @@ impl BasicInfo{
     }
 
     pub fn get_dump_size(&self) -> usize{
-        let to_return = self.miner.len()
-                            + 8
-                            + Tools::bigint_size(&self.PoW)
-                            + 32
-                            + 8
-                            + 1;
+        let to_return = 33
+                    + 8
+                    + Tools::bigint_size(&self.PoW)
+                    + 32
+                    + 8;
         return to_return;
     }
     pub fn dump(&self,buffer:&mut Vec<u8>) -> Result<(),&'static str>{
 
         // dumping miner
-        for byte in self.miner.as_bytes().iter(){
+        for byte in self.miner.iter(){
             buffer.push(*byte);
         }
-        buffer.push(0);
 
         // dumping timestamp
         for byte in self.timestamp.to_be_bytes().iter(){
             buffer.push(*byte);
         }
-
-        // dumping PoW
-        let result = Tools::dump_biguint(&self.PoW, buffer);
-        if result.is_err(){
-            return Err("could not dump PoW");
-        }
-        
 
         // dumping previous hash
         for byte in self.previous_hash.iter(){
@@ -85,62 +77,65 @@ impl BasicInfo{
 
         // dumping difficulty
         buffer.push(self.difficulty);
+
+        // dumping PoW
+        let result = Tools::dump_biguint(&self.PoW, buffer);
+        if result.is_err(){
+            return Err("could not dump PoW");
+        }
+
         return Ok(());
     }
 
-    pub fn parse(buffer:&[u8]) -> Result<BasicInfo,&'static str>{
-        let mut buffer_index:usize = 0;
+    pub fn parse(data:&[u8]) -> Result<BasicInfo,&'static str>{
+        let mut index:usize = 0;
         
         // parsing miner
-        let mut miner:String = String::new();
-        while buffer[buffer_index] != 0{
-            miner.push(buffer[buffer_index] as char);
-            buffer_index += 1;
-        }
-        buffer_index += 1;
+        let miner:[u8;33] = unsafe{transmute_copy(&data[index])};
+        index += 33;
 
         // parsing timestamp
         let mut timestamp:u64 = 0;
-        if buffer.len() - buffer_index < 8{
+        if data.len() - index < 8{
             return Err("Could not parse timestamp");
         }
-        
-        timestamp = bytes_to_u64!(buffer,buffer_index);
-
-        buffer_index += 8;
-
-        // parsing PoW
-        let result = Tools::load_biguint(&buffer[buffer_index..]);
-        if result.is_err(){
-            return Err("Error loading PoW");
-        }
-        let res_tuple = result.unwrap();
-        let PoW = res_tuple.0;
-        buffer_index += res_tuple.1;
+        timestamp = bytes_to_u64!(data,index);
+        index += 8;
 
         // parsing previous hash
-        if buffer.len() - buffer_index < 32{
+        if data.len() - index < 32{
             return Err("Could not parse previous hash");
         }
         let mut previous_hash:[u8;32] = [0;32];
         for i in 0..32{
-            previous_hash[i] = buffer[buffer_index+i];
+            previous_hash[i] = data[index+i];
         }
-        buffer_index += 32;
+        index += 32;
 
         // parsing height
-        if buffer.len() - buffer_index < 8{
+        if data.len() - index < 8{
             return Err("Could not parse height");
         }
-        let height:u64 = bytes_to_u64!(buffer,buffer_index);
-        buffer_index += 8;
+        let height:u64 = bytes_to_u64!(data,index);
+        index += 8;
 
         // parsing difficulty
-        if buffer.len() - buffer_index < 1{
+        if data.len() - index < 1{
             return Err("Could not parse timestamp");
         }
-        let difficulty:u8 = buffer[buffer_index];
+        let difficulty:u8 = data[index];
         
+        // parsing PoW
+        let result = Tools::load_biguint(&data[index..]);
+        if result.is_err(){
+            return Err("Error loading PoW");
+        }
+        let PoW: BigUint;
+        match result{
+            Err(e)=>{return Err(e);}
+            Ok(a) => {PoW = a.0;}
+        }
+
         return Ok(BasicInfo{miner:miner,
                         timestamp:timestamp,
                         PoW:PoW,
@@ -294,7 +289,7 @@ impl TransactionBlock{
     }
 
     pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
-        let mut size:usize = self.get_dump_size();
+        let size:usize = self.get_dump_size();
 
         let mut to_return:Vec<u8> = Vec::with_capacity(size);
 

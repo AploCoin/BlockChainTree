@@ -117,7 +117,7 @@ pub fn count_u64_digits(input:u64)->u64{
 
 
 pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(),&'static str>{
-    let mut number_bytes:Vec<u8> = number.to_bytes_le();
+    let number_bytes:Vec<u8> = number.to_bytes_le();
 
     let amount_of_bunches:usize = number_bytes.len();
     if amount_of_bunches>255{
