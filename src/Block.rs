@@ -2,7 +2,7 @@ use num_bigint::BigUint;
 use sha2::{Sha256, Digest};
 use std::convert::TryInto;
 use crate::Tools;
-use crate::merkletree;
+use crate::merkletree::MerkleTree;
 use crate::Transaction;
 use crate::Token;
 use base64;
@@ -95,11 +95,10 @@ impl BasicInfo{
         index += 33;
 
         // parsing timestamp
-        let mut timestamp:u64 = 0;
         if data.len() - index < 8{
             return Err("Could not parse timestamp");
         }
-        timestamp = bytes_to_u64!(data,index);
+        let timestamp = bytes_to_u64!(data,index);
         index += 8;
 
         // parsing previous hash
@@ -220,7 +219,7 @@ impl TransactionToken{
 pub struct TransactionBlock{
     transactions:Vec<TransactionToken>,
     fee:BigUint,
-    merkle_tree:Option<merkletree::MerkleTree>,
+    merkle_tree:Option<MerkleTree>,
     merkle_tree_root:[u8;32],
     default_info:BasicInfo
 }
@@ -241,7 +240,7 @@ impl TransactionBlock{
     }
 
     pub fn build_merkle_tree(&mut self) ->Result<(),&'static str>{
-        let mut new_merkle_tree = merkletree::MerkleTree::new();
+        let mut new_merkle_tree = MerkleTree::new();
         let mut hashes:Vec<&[u8;32]> = Vec::with_capacity(self.transactions.len());
 
         for TT in self.transactions.iter(){

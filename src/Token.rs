@@ -149,7 +149,7 @@ impl Token{
     }
 
     pub fn get_dump_size(&self) -> usize{
-        let mut size:usize = 1 // header
+        let size:usize = 1 // header
                         +1 // is assigned
                         +33 // current owner
                         +64 // signature
@@ -214,7 +214,7 @@ impl Token{
         let signed_data:[u8;32] = hasher.finalize().as_slice().try_into().unwrap();
 
         // creating verifier
-        let mut verifier = Secp256k1::verification_only(); 
+        let verifier = Secp256k1::verification_only(); 
         
         // loading message
         let result = Message::from_slice(&signed_data);
@@ -250,7 +250,7 @@ impl Token{
     }
 
     pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
-        let mut calculated_size:usize = self.get_dump_size();
+        let calculated_size:usize = self.get_dump_size();
         
         let mut dumped_token:Vec<u8> = Vec::with_capacity(calculated_size);
 

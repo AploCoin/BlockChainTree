@@ -86,7 +86,7 @@ impl MerkleTree{
         let initial_length = input.len();
         self.depth = find_closest_power_of_2(initial_length);
         if initial_length%2 != 0{
-            for i in initial_length..usize::pow(2,self.depth as u32){
+            for _ in initial_length..usize::pow(2,self.depth as u32){
                 input.push(&PADDING_HASH);
             }
             self.depth = find_closest_power_of_2(input.len());
@@ -96,7 +96,7 @@ impl MerkleTree{
 
         self.array_representation.reserve(amount_of_nodes);
 
-        for i in 0..amount_of_nodes-input.len(){
+        for _ in 0..amount_of_nodes-input.len(){
             self.array_representation.push(None);
         }
 
