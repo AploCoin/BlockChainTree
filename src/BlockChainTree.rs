@@ -572,13 +572,13 @@ impl DerivativeChain{
 
 
 pub struct BlockChainTree{
-    lookup_table:HashMap<String,u64>,
+    lookup_table:HashMap<[u8;33],u64>,
     main_chain:MainChain,
 }
 
 impl BlockChainTree{
     fn read_lookup_table(file_path:String) -> 
-                        Result<HashMap<String,u64>,&'static str>{
+                        Result<HashMap<[u8;33],u64>,&'static str>{
 
         let result = decompress_from_file(file_path);
         if result.is_err(){
@@ -587,46 +587,35 @@ impl BlockChainTree{
 
         let decompressed_data = result.unwrap();
 
-        let mut lookup_table_files:HashMap<String,u64> = HashMap::new();
+        if decompressed_data.len()%41 != 0{
+            return Err("Bad Data");
+        }
+        
+        let mut lookup_table_files:HashMap<[u8;33],u64> = HashMap::new();
 
         let mut offset:usize = 0;
 
-        while offset != decompressed_data.len(){
-            if decompressed_data.len()-offset <= 8{
-                return Err("Could not parse value");
-            }
-            let value:u64 = unsafe{ transmute_copy::<u8,u64>(&decompressed_data[offset])};
+        while offset != decompressed_data.len(){  
+            let key:[u8;33] = unsafe{transmute_copy(&decompressed_data[offset])};
+            offset += 33;
+
+            let value:u64 = unsafe{transmute_copy(&decompressed_data[offset])};
             offset += 8;
-            
-            let mut string_end = offset;
-            while decompressed_data[string_end] != 0{
-                if string_end == decompressed_data.len(){
-                    return Err("Could not parse key");
-                }
-                string_end += 1;
-            }
-            string_end += 1;
 
-            unsafe{
-                let key = String::from(str::from_utf8_unchecked(&decompressed_data[offset..string_end]));
-                lookup_table_files.insert(key,value);
-            }
-            
-            offset = string_end + 1;
-
+            lookup_table_files.insert(key,value);
         }
 
         return Ok(lookup_table_files);
     }
 
-    fn dump_lookup_table(&self,
-                    file_path:String) -> 
-                        Result<(),&'static str>{
+    // fn dump_lookup_table(&self,
+    //                 file_path:String) -> 
+    //                     Result<(),&'static str>{
 
         
-        let mut to_compress:Vec<u8> = Vec::with_capacity(table.len()*40);
+    //     let mut to_compress:Vec<u8> = Vec::with_capacity(table.len()*40);
         
-    }
+    // }
     pub fn with_config(){
 
     }
