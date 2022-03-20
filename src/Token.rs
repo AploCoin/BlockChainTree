@@ -2,10 +2,12 @@ use num_bigint::BigUint;
 use num_traits::identities::Zero;
 use sha2::{Sha256, Digest};
 use std::convert::TryInto;
-use base64;
-use rsa::{RsaPublicKey, pkcs1::FromRsaPublicKey, PaddingScheme, hash::Hash::SHA2_256};
-use rsa::PublicKey;
+use secp256k1::{Secp256k1, Message};
+use secp256k1::PublicKey;
+use secp256k1::ecdsa::Signature;
+use secp256k1::hashes::sha256;
 use crate::Tools;
+use std::mem::transmute_copy;
 
 
 
@@ -15,14 +17,13 @@ use crate::Tools;
 
     Header - 1 byte
 
-    Previous owner - ascii encoded
 */
 
 #[derive(Debug)]
 pub struct Token{
-    current_owner:String,
+    current_owner:[u8;33],
 
-    signature:String,
+    signature:[u8;64],
     token_hash:[u8;32],
 
     token_data:String,
@@ -36,8 +37,8 @@ pub struct Token{
 
 
 impl Token{
-    pub fn new(current_owner:String,
-                signature:String,
+    pub fn new(current_owner:[u8;33],
+                signature:[u8;64],
                 token_hash:[u8;32],
                 token_data:String,
                 smol_contract:String,
@@ -119,7 +120,7 @@ impl Token{
         
         concatenated.push(self.assigned as u8);
 
-        for byte in self.current_owner.as_bytes().iter(){
+        for byte in self.current_owner.iter(){
             concatenated.push(*byte);
         }
         for byte in self.token_data.as_bytes().iter(){
@@ -134,7 +135,7 @@ impl Token{
         for byte in transfer_fee_as_bytes{
             concatenated.push(*byte);
         }
-        for byte in self.signature.as_bytes().iter(){
+        for byte in self.signature.iter(){
             concatenated.push(*byte);
         }
         for byte in self.token_hash.iter(){
@@ -148,12 +149,11 @@ impl Token{
     }
 
     pub fn get_dump_size(&self) -> usize{
-        let size:usize = 1
-                        +self.current_owner.len()
-                        +1
-                        +self.signature.len()
-                        +1
-                        +32
+        let mut size:usize = 1 // header
+                        +1 // is assigned
+                        +33 // current owner
+                        +64 // signature
+                        +32 // token hash
                         +self.token_data.len()
                         +1
                         +self.smol_contract.len()
@@ -162,6 +162,7 @@ impl Token{
                         +1
                         +Tools::bigint_size(&self.transfer_fee)
                         +1;
+
         return size;
     }
 
@@ -188,7 +189,7 @@ impl Token{
         
         concatenated.push(self.assigned as u8);
 
-        for byte in self.current_owner.as_bytes().iter(){
+        for byte in self.current_owner.iter(){
             concatenated.push(*byte);
         }
         for byte in self.token_data.as_bytes().iter(){
@@ -212,69 +213,65 @@ impl Token{
         hasher.update(concatenated);
         let signed_data:[u8;32] = hasher.finalize().as_slice().try_into().unwrap();
 
-        // decoding signature from base64
-        let res = base64::decode(&self.signature);
-        let decoded_signature:Vec<u8>;
-        match res{
-            Err(_) => {return Err(&"Signature decoding error")},
-            Ok(r) => {decoded_signature = r;}
+        // creating verifier
+        let mut verifier = Secp256k1::verification_only(); 
+        
+        // loading message
+        let result = Message::from_slice(&signed_data);
+        if result.is_err(){
+            return Err("Error loading message");
         }
+        let message = result.unwrap();
 
-        // decoding previous sender public key
-        let res = base64::decode(&self.current_owner);
-        let decoded_previous_owner:Vec<u8>;
-        match res{
-            Err(_) => {return Err(&"Previous owner decoding error")},
-            Ok(r) => {decoded_previous_owner = r;}
+        // loading public key
+        let result = PublicKey::from_slice(&self.current_owner);
+        if result.is_err(){
+            return Err("Error loading public key");
         }
-        // loading previous owner as public key
-        let previous_owner_public = RsaPublicKey::from_pkcs1_der(&decoded_previous_owner);
-        let decoded_previous_owner_public:RsaPublicKey;
-        match previous_owner_public{
-            Err(_) => {return Err(&"Public key decoding error")},
-            Ok(key) => {decoded_previous_owner_public = key;}
+        let public_key = result.unwrap();
+        
+        // load signature
+        let result = Signature::from_compact(&self.signature);
+        if result.is_err(){
+            return Err("Error loading signature");
         }
-        
-        // getting padding scheme for virifying
-        let padding_scheme = PaddingScheme::new_pkcs1v15_sign(Some(SHA2_256));
-        
+        let signature = result.unwrap();
+
+
         // verifying hashed data with public key
-        let res = decoded_previous_owner_public.verify(padding_scheme, 
-                                                    &signed_data, 
-                                                    &decoded_signature);
-        match res{
+        let result = verifier.verify_ecdsa(&message,
+                                            &signature,
+                                            &public_key);
+
+        match result{
             Err(_) => {return Ok(false);}
             Ok(_) => {return Ok(true);}
         }
     }
 
-    pub fn dump(&self)->Result<Vec<u8>,&'static str>{
+    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
         let mut calculated_size:usize = self.get_dump_size();
-        
-        if self.assigned{
-            calculated_size += self.token_data.len()+1;
-            calculated_size += self.smol_contract.len()+1;
-        }
         
         let mut dumped_token:Vec<u8> = Vec::with_capacity(calculated_size);
 
         dumped_token.push(1);//header
 
-
-        for byte in self.current_owner.as_bytes().iter(){
+        // dump current owner
+        for byte in self.current_owner.iter(){
             dumped_token.push(*byte);
         }
-        dumped_token.push(0);
 
+        // dump token hash
         for byte in self.token_hash.iter(){
             dumped_token.push(*byte);
         }
 
-        for byte in self.signature.as_bytes().iter(){
+        // dump signature
+        for byte in self.signature.iter(){
             dumped_token.push(*byte)
         }
-        dumped_token.push(0);
 
+        // dump assigned/token data, small contract
         if !self.assigned{
             dumped_token.push(0);
         }else{
@@ -306,182 +303,132 @@ impl Token{
         return Ok(dumped_token);
     }
 
-    pub fn parse_token(data:&[u8],token_size:u64) -> Result<Token,&'static str>{
-        let mut index:usize = 0;
+    // pub fn parse_token(data:&[u8],token_size:u64) -> Result<Token,&'static str>{
+    //     let mut index:usize = 0;
 
-        //parsing previous owner address
-        let mut new_index:usize = 0;
-        while data[new_index] != 0{
-            new_index += 1;
-            if new_index >= token_size as usize{
-                return Err(&"Can't find end of previous owner address");
-            }
-        }
-        if new_index == index{
-            return Err(&"Previous owner address not found");
-        }
+    //     if data.len() <= 131{
+    //         return Err("Could not parse token");
+    //     }
 
-        let mut previous_owner:String = String::with_capacity(new_index);
-        for i in index..new_index{
-            previous_owner.push(data[i] as char);
-        }
-        new_index += 1;
-        index = new_index;
+    //     //parsing current owner address
+    //     let current_owner:[u8;33] = unsafe{transmute_copy(&data[index])};
+    //     index += 33;
 
-        //parsing current owner address
-        while data[new_index] != 0{
-            new_index += 1;
-            if new_index >= token_size as usize{
-                return Err(&"Can't find end of current owner address");
-            }
-        }
-        if new_index == index{
-            return Err(&"Current owner address not found");
-        }
+    //     //parsing token hash
+    //     let token_hash:[u8;32] = unsafe{transmute_copy(&data[index])};
+    //     index += 32;
 
-        let mut current_owner:String = String::with_capacity(new_index-index);
-        for i in index..new_index{
-            current_owner.push(data[i] as char);
-        }
-        new_index += 1;
-        index = new_index;
+    //     //parsing signature
+    //     let signature:[u8;64] = unsafe{transmute_copy(&data[index])};
+    //     index += 64;
 
-        //parsing token hash
-        if token_size as isize - index as isize <= 32{
-            return Err(&"No token hash found, or end reached")
-        }
-        let mut token_hash:[u8;32] = [0;32];
-        new_index += 32;
-        let mut hash_index:usize = 0;
-        for i in index..new_index{
-            token_hash[hash_index] = data[i];
-            hash_index += 1;
-        }
-        index = new_index;
 
-        //parsing signature
-        while data[new_index] != 0{
-            new_index += 1;
-            if new_index >= token_size as usize{
-                return Err(&"Can't find signature end");
-            }
-        }
-        if new_index == index{
-            return Err(&"Signature is not found");
-        }
 
-        let mut signature:String = String::with_capacity(new_index-index);
-        for i in index..new_index{
-            signature.push(data[i] as char);
-        }
-        new_index += 1;
-        index = new_index;
+    //     let mut assigned = false;
+    //     if data[index] == 1{
+    //         //assigned
+    //         assigned = true;
 
-        let mut assigned = false;
-        if data[index] == 1{
-            //assigned
-            assigned = true;
+    //         index += 1;
+    //         new_index = index;
 
-            index += 1;
-            new_index = index;
+    //         //parsing token data
+    //         while data[new_index] != 0{
+    //             new_index += 1;
+    //             if new_index >= token_size as usize{
+    //                 return Err(&"Could not find end of data");
+    //             }
+    //         }
 
-            //parsing token data
-            while data[new_index] != 0{
-                new_index += 1;
-                if new_index >= token_size as usize{
-                    return Err(&"Could not find end of data");
-                }
-            }
+    //         if index == new_index{
+    //             return Err(&"data not found");
+    //         }
 
-            if index == new_index{
-                return Err(&"data not found");
-            }
+    //         let mut token_data:String = String::with_capacity(new_index-index);
+    //         for i in index..new_index{
+    //             token_data.push(data[i] as char);
+    //         }
+    //         new_index += 1;
+    //         index = new_index;
 
-            let mut token_data:String = String::with_capacity(new_index-index);
-            for i in index..new_index{
-                token_data.push(data[i] as char);
-            }
-            new_index += 1;
-            index = new_index;
+    //         //parsing contract
+    //         while data[new_index] != 0{
+    //             new_index += 1;
+    //             if new_index >= token_size as usize{
+    //                 return Err(&"Could not find an end of contract");
+    //             }
+    //         }
+    //         let mut contract:String = String::with_capacity(new_index-index);
+    //         for i in index..new_index{
+    //             contract.push(data[i] as char);
+    //         }
+    //         new_index += 1;
+    //         index = new_index;
 
-            //parsing contract
-            while data[new_index] != 0{
-                new_index += 1;
-                if new_index >= token_size as usize{
-                    return Err(&"Could not find an end of contract");
-                }
-            }
-            let mut contract:String = String::with_capacity(new_index-index);
-            for i in index..new_index{
-                contract.push(data[i] as char);
-            }
-            new_index += 1;
-            index = new_index;
+    //         //parsing transfer fee
+    //         let res = Tools::load_biguint(&data[index..]);
+    //         let transfer_fee:BigUint;
+    //         match res{
+    //             Err(e) =>{return Err(e)}
+    //             Ok(a) => {
+    //                 transfer_fee = a.0;
+    //                 index += a.1;
+    //             }
+    //         }
 
-            //parsing transfer fee
-            let res = Tools::load_biguint(&data[index..]);
-            let transfer_fee:BigUint;
-            match res{
-                Err(e) =>{return Err(e)}
-                Ok(a) => {
-                    transfer_fee = a.0;
-                    index += a.1;
-                }
-            }
+    //         //parsing coin supply
+    //         let res = Tools::load_biguint(&data[index..]);
+    //         let coin_supply:BigUint;
+    //         match res{
+    //             Err(e) =>{return Err(e)}
+    //             Ok(a) => {
+    //                 coin_supply = a.0;
+    //                 index += a.1;
+    //             }
+    //         }
 
-            //parsing coin supply
-            let res = Tools::load_biguint(&data[index..]);
-            let coin_supply:BigUint;
-            match res{
-                Err(e) =>{return Err(e)}
-                Ok(a) => {
-                    coin_supply = a.0;
-                    index += a.1;
-                }
-            }
+    //         if index != token_size as usize{
+    //             return Err(&"Wrong size of token");
+    //         }
 
-            if index != token_size as usize{
-                return Err(&"Wrong size of token");
-            }
-
-            let token_res = Token::new(current_owner,
-                                        signature,
-                                        token_hash,
-                                        token_data,
-                                        contract,
-                                        coin_supply,
-                                        transfer_fee,
-                                        assigned);
-            let token:Token;
-            match token_res{
-                Err(e) => {return Err(e)}
-                Ok(a) => {token = a}
-            }
+    //         let token_res = Token::new(current_owner,
+    //                                     signature,
+    //                                     token_hash,
+    //                                     token_data,
+    //                                     contract,
+    //                                     coin_supply,
+    //                                     transfer_fee,
+    //                                     assigned);
+    //         let token:Token;
+    //         match token_res{
+    //             Err(e) => {return Err(e)}
+    //             Ok(a) => {token = a}
+    //         }
             
-            return Ok(token);
-        }
+    //         return Ok(token);
+    //     }
 
-        index += 1;
-        if index != token_size as usize{
-            return Err(&"Wrong size of token");
-        }
+    //     index += 1;
+    //     if index != token_size as usize{
+    //         return Err(&"Wrong size of token");
+    //     }
 
-        let token_res = Token::new(current_owner,
-                                    signature,
-                                    token_hash,
-                                    String::with_capacity(0),
-                                    String::with_capacity(0),
-                                    BigUint::zero(),
-                                    BigUint::zero(),
-                                    assigned);
-        let token:Token;
-        match token_res{
-            Err(e)=>{return Err(e)}
-            Ok(a) => {token = a} 
-        }
+    //     let token_res = Token::new(current_owner,
+    //                                 signature,
+    //                                 token_hash,
+    //                                 String::with_capacity(0),
+    //                                 String::with_capacity(0),
+    //                                 BigUint::zero(),
+    //                                 BigUint::zero(),
+    //                                 assigned);
+    //     let token:Token;
+    //     match token_res{
+    //         Err(e)=>{return Err(e)}
+    //         Ok(a) => {token = a} 
+    //     }
 
-        return Ok(token);
-    }
+    //     return Ok(token);
+    // }
 }
 
 
@@ -559,39 +506,39 @@ impl TokenAction{
         return Box::new(result);
     }
 
-    pub fn verify(&self,prev_hash:&[u8;32])->Result<bool,&'static str>{
-        let signed_data_hash = self.hash(prev_hash);
+    // pub fn verify(&self,prev_hash:&[u8;32])->Result<bool,&'static str>{
+    //     let signed_data_hash = self.hash(prev_hash);
         
-        let res = base64::decode(&self.signature);
-        let decoded_signature:Vec<u8>;
-        match res{
-            Err(_) => {return Err(&"Signature decoding error")},
-            Ok(r) => {decoded_signature = r;}
-        }
+    //     let res = base64::decode(&self.signature);
+    //     let decoded_signature:Vec<u8>;
+    //     match res{
+    //         Err(_) => {return Err(&"Signature decoding error")},
+    //         Ok(r) => {decoded_signature = r;}
+    //     }
 
-        let res = base64::decode(&self.previous_owner);
-        let decoded_sender:Vec<u8>;
-        match res{
-            Err(_) => {return Err(&"Sender decoding error")},
-            Ok(r) => {decoded_sender = r;}
-        }
+    //     let res = base64::decode(&self.previous_owner);
+    //     let decoded_sender:Vec<u8>;
+    //     match res{
+    //         Err(_) => {return Err(&"Sender decoding error")},
+    //         Ok(r) => {decoded_sender = r;}
+    //     }
 
 
-        let sender_public = RsaPublicKey::from_pkcs1_der(&decoded_sender);
-        let decoded_sender_public:RsaPublicKey;
-        match sender_public{
-            Err(_) => {return Err(&"Public key decoding error")},
-            Ok(key) => {decoded_sender_public = key;}
-        }
-        let padding_scheme = PaddingScheme::new_pkcs1v15_sign(Some(SHA2_256));
-        let res = decoded_sender_public.verify(padding_scheme, 
-                                    signed_data_hash.as_ref(), 
-                                    &decoded_signature);
-        match res{
-            Err(_) => {return Ok(false);}
-            Ok(_) => {return Ok(true);}
-        }
-    }
+    //     let sender_public = RsaPublicKey::from_pkcs1_der(&decoded_sender);
+    //     let decoded_sender_public:RsaPublicKey;
+    //     match sender_public{
+    //         Err(_) => {return Err(&"Public key decoding error")},
+    //         Ok(key) => {decoded_sender_public = key;}
+    //     }
+    //     let padding_scheme = PaddingScheme::new_pkcs1v15_sign(Some(SHA2_256));
+    //     let res = decoded_sender_public.verify(padding_scheme, 
+    //                                 signed_data_hash.as_ref(), 
+    //                                 &decoded_signature);
+    //     match res{
+    //         Err(_) => {return Ok(false);}
+    //         Ok(_) => {return Ok(true);}
+    //     }
+    // }
     pub fn get_dump_size(&self)->usize{
         return 0;
     }

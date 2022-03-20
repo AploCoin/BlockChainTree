@@ -10,3 +10,5 @@ Cargo.lock
 **/*.rs.bk
 
 dump_test.txt
+
+/.vscode

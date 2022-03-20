@@ -137,7 +137,7 @@ pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(),&'static str
 
 pub fn load_biguint(data:&[u8]) -> Result<(BigUint,usize),&'static str>{
     let amount_of_bunches:u8 = data[0];
-    let amount_of_bytes:usize = (amount_of_bunches as usize);//*4;
+    let amount_of_bytes:usize = amount_of_bunches as usize;//*4;
     if data.len()<amount_of_bytes{
         return Err(&"Wrong amount of bunches");
     }

@@ -624,6 +624,8 @@ impl BlockChainTree{
                         Result<(),&'static str>{
 
         
+        let mut to_compress:Vec<u8> = Vec::with_capacity(table.len()*40);
+        
     }
     pub fn with_config(){
 

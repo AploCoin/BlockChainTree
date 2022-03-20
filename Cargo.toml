@@ -14,3 +14,4 @@ rsa = "0.5"
 num-traits = "0.2"
 byteorder = "1.2.7"
 zstd = "0.9"
+secp256k1 = {version = "0.22.1", features = ["rand-std","bitcoin_hashes"]}
