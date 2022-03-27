@@ -523,3 +523,11 @@ impl TokenBlock{
                             payment_transaction:transaction});
     }
 }
+
+
+pub struct GenesisBlock{
+
+}
+impl GenesisBlock{
+    
+}

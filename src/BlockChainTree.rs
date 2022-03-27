@@ -16,6 +16,7 @@ use std::io::Write;
 use std::io::Read;
 use std::collections::HashMap;
 use std::str;
+use std::path::Path;
 
 static BLOCKS_IN_FILE:usize = 4;
 static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/"; 
@@ -38,7 +39,8 @@ static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
 // God is dead, noone will stop anarchy
 
 pub fn compress_to_file(output_file:String,data:&[u8])->Result<(),&'static str>{
-    let result = fs::File::create(output_file);
+    let path = Path::new(&output_file);
+    let result = fs::File::create(path);
     if result.is_err(){
         return Err("Error creating file");
     }
@@ -65,9 +67,10 @@ pub fn compress_to_file(output_file:String,data:&[u8])->Result<(),&'static str>{
 }
 
 pub fn decompress_from_file(filename:String) -> Result<Vec<u8>,&'static str>{
+    let path = Path::new(&filename);
     let mut decoded_data:Vec<u8> = Vec::new();
 
-    let result = fs::File::open(filename);
+    let result = fs::File::open(path);
     if result.is_err(){
         return Err("Error opening file");
     }
@@ -144,7 +147,8 @@ pub struct Config{
 
 impl Config{
     pub fn read(file_path:String)->Result<Config,&'static str>{
-        let result = fs::File::open(file_path);
+        let path = Path::new(&file_path);
+        let result = fs::File::open(path);
         if result.is_err(){
             return Err("Error opening config file");
         }
@@ -172,7 +176,8 @@ impl Config{
     }
 
     pub fn dump(&self,file_path:String) -> Result<(),&'static str>{
-        let result = fs::File::create(file_path);
+        let path = Path::new(&file_path);
+        let result = fs::File::create(path);
         if result.is_err(){
             return Err("Error creating file");
         }
@@ -242,7 +247,8 @@ impl MainChain{
             file_was_found = true;
         }
 
-        let path = String::from(MAIN_BLOCKS_DIRECTORY) + &filename.to_string();
+        let path = String::from(MAIN_BLOCKS_DIRECTORY) 
+                            + &filename.to_string();
 
         let result = compress_to_file(path, &to_dump);
         if result.is_err(){
@@ -386,18 +392,24 @@ impl MainChain{
 pub struct DerivativeChain{
     config:Config,
     lookup_table:HashMap<[u8;32],u64>,
-    pathname:u64
+    pathname:u64,
+    id:u64
 }
 
 impl DerivativeChain{
 
-    pub fn with_config(pathname:u64) -> Result<DerivativeChain,
+    pub fn with_config(pathname:u64,
+                        id:u64) -> Result<DerivativeChain,
                                         &'static str>{
 
         let root_path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
-                    + &pathname.to_string(); 
+                    + &pathname.to_string()
+                    + "/"
+                    + &id.to_string()
+                    + "/"; 
         
-        let config_path = (root_path.clone() + "/") + &CONFIG_FILE;
+        let config_path = root_path.clone()  
+                            + CONFIG_FILE;
         
         let result = Config::read(config_path);
         if result.is_err(){
@@ -405,7 +417,8 @@ impl DerivativeChain{
         } 
         let config = result.unwrap();
 
-        let lookup_table_path = (root_path+"/")+&LOOKUP_TABLE_FILE;
+        let lookup_table_path = root_path
+                                + LOOKUP_TABLE_FILE;
 
         let result = read_lookup_table(lookup_table_path);
         if result.is_err(){
@@ -416,25 +429,31 @@ impl DerivativeChain{
 
         return Ok(DerivativeChain{config:config,
                                 lookup_table:lookup_table,
-                                pathname:pathname});        
+                                pathname:pathname,
+                                id:id});        
     }
 
     pub fn dump_config(&self) -> Result<(),&'static str>{
         let root_path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
-                    + &self.pathname.to_string(); 
+                    + &self.pathname.to_string()
+                    + "/"
+                    + &self.id.to_string()
+                    + "/"; 
         
-        let config_path = (root_path.clone() + "/") + &CONFIG_FILE;
-        let lookup_table_path = (root_path+"/")+&LOOKUP_TABLE_FILE;
+        let config_path = root_path.clone() 
+                            + CONFIG_FILE;
+        let lookup_table_path = root_path
+                            + LOOKUP_TABLE_FILE;
 
         let result = self.config.dump(config_path);
         if result.is_err(){
-            return Err("Error dumping config");
+            return Err(result.err().unwrap());
         }
 
         let result = dump_lookup_table(&self.lookup_table,
                                     lookup_table_path);
         if result.is_err(){
-            return Err("Error dumping lookup table");
+            return Err(result.err().unwrap());
         }
 
         return Ok(()); 
@@ -464,7 +483,7 @@ impl DerivativeChain{
         for block in blocks.iter(){
             let result = block.dump();
             if result.is_err(){
-                return Err("Error dumping block");
+                return Err(result.err().unwrap());
             }
 
             let mut dump = result.unwrap();
@@ -483,14 +502,17 @@ impl DerivativeChain{
             file_was_found = true;
         }
 
-        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) + 
-                        &self.pathname.to_string() + "/" + 
-                        &filename.to_string();
+        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
+                            +&self.pathname.to_string() 
+                            +"/" 
+                            +&self.id.to_string()
+                            +"/" 
+                            +&filename.to_string();
 
 
         let result = compress_to_file(path, &to_dump);
         if result.is_err(){
-            return Err("Could not save file");
+            return Err(result.err().unwrap());
         }
 
         if !file_was_found{
@@ -514,7 +536,7 @@ impl DerivativeChain{
 
         let result = self.get_blocks_by_index(*filename);
         if result.is_err(){
-            return Err("Error parsing blocks");
+            return Err(result.err().unwrap());
         }
 
         return Ok(result.unwrap());
@@ -535,19 +557,22 @@ impl DerivativeChain{
             return Err("Bad index");
         }
 
-        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) + 
-                        &self.pathname.to_string() + "/" + 
-                        &index.to_string();
+        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
+                            +&self.pathname.to_string() 
+                            +"/" 
+                            +&self.id.to_string()
+                            +"/" 
+                            +&index.to_string();
 
         let result = decompress_from_file(path);
         if result.is_err(){
-            return Err("Could not decompress file");
+            return Err(result.err().unwrap());
         }
 
         let decompressed_data = result.unwrap();
         let size_of_data = decompressed_data.len();
         if size_of_data == 0{
-            return Err("Empty file");
+            return Err("Error, empty file");
         }
         let amount:usize = decompressed_data[0] as usize;
 
@@ -574,7 +599,7 @@ impl DerivativeChain{
                                                         block_size);
             
             if result.is_err(){
-                return Err("could not parse block");
+                return Err(result.err().unwrap());
             }
 
             offset += block_size as usize;
@@ -583,16 +608,17 @@ impl DerivativeChain{
 
         return Ok(to_return);
     }
+
 }
 
 
 pub struct BlockChainTree{
-    lookup_table:HashMap<[u8;33],u64>,
+    lookup_table:HashMap<[u8;33],(u64,u64)>,
     main_chain:MainChain,
 }
 
 impl BlockChainTree{
-    fn read_lookup_table() -> Result<HashMap<[u8;33],u64>,&'static str>{
+    fn read_lookup_table() -> Result<HashMap<[u8;33],(u64,u64)>,&'static str>{
         
         let file_path = String::from(BLOCKS_DIRECTORY)
                             + LOOKUP_TABLE_FILE;
@@ -603,11 +629,11 @@ impl BlockChainTree{
 
         let decompressed_data = result.unwrap();
 
-        if decompressed_data.len()%41 != 0{
+        if decompressed_data.len()%49 != 0{
             return Err("Bad Data");
         }
         
-        let mut lookup_table_files:HashMap<[u8;33],u64> = HashMap::new();
+        let mut lookup_table_files:HashMap<[u8;33],(u64,u64)> = HashMap::new();
 
         let mut offset:usize = 0;
 
@@ -615,10 +641,13 @@ impl BlockChainTree{
             let key:[u8;33] = unsafe{transmute_copy(&decompressed_data[offset])};
             offset += 33;
 
-            let value:u64 = unsafe{transmute_copy(&decompressed_data[offset])};
+            let value1:u64 = unsafe{transmute_copy(&decompressed_data[offset])};
             offset += 8;
 
-            lookup_table_files.insert(key,value);
+            let value2:u64 = unsafe{transmute_copy(&decompressed_data[offset])};
+            offset += 8;
+
+            lookup_table_files.insert(key,(value1,value2));
         }
 
         return Ok(lookup_table_files);
@@ -633,13 +662,16 @@ impl BlockChainTree{
             for byte in key{
                 data_to_compress.push(*byte);
             }
-            for byte in value.to_be_bytes(){
+            for byte in value.0.to_be_bytes(){
+                data_to_compress.push(byte);
+            }
+            for byte in value.1.to_be_bytes(){
                 data_to_compress.push(byte);
             }
         }
                         
         let result = compress_to_file(String::from(file_path), 
-                                                                &data_to_compress);
+                                    &data_to_compress);
         if result.is_err(){
             return Err("Error compressing and dumping lookup table");
         }
@@ -667,6 +699,45 @@ impl BlockChainTree{
                                 main_chain:main_chain});
     }
 
+    pub fn get_amount_in_der_block(folder:u64) 
+                                -> Result<u64,&'static str>{
+        
+        let config_file = String::from(DERIVATIVE_BLOCKS_DIRECTORY)
+                            +&folder.to_string()
+                            +"/"
+                            +CONFIG_FILE;
+
+        let path = Path::new(&config_file);
+        
+        let result = fs::File::open(path);
+        if result.is_err(){
+            return Err("Error opening file");
+        }
+        
+        let mut file = result.unwrap();
+
+        let mut amount_of_chains:[u8;8] = [0;8];
     
+        let result = file.read_exact(&mut amount_of_chains);
+        if result.is_err(){
+            return Err("Error reading amount of files");
+        }
+
+        return Ok(u64::from_be_bytes(amount_of_chains));
+    }
+
+    pub fn get_derivative_chain(&self,address:&[u8;33])
+                            -> Result<DerivativeChain,&'static str>{
+
+        let result = self.lookup_table.get(address);
+        if result.is_none(){
+            return Err("Error, could not find chain for that address");
+        }
+
+        let ids = result.unwrap();
+
+        return DerivativeChain::with_config(ids.0, ids.1);
+    }
+
 
 }
