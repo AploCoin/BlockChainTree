@@ -524,10 +524,3 @@ impl TokenBlock{
     }
 }
 
-
-pub struct GenesisBlock{
-
-}
-impl GenesisBlock{
-    
-}

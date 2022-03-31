@@ -5,26 +5,33 @@ use std::convert::TryInto;
 use crate::Tools;
 use crate::Transaction;
 use crate::Token;
-use crate::Block;
+use crate::Block::{TransactionBlock, TokenBlock};
 use std::mem::transmute_copy;
 use zstd;
 
 use std::env;
 use std::fs;
 use std::io;
+use std::fs::File;
 use std::io::Write;
 use std::io::Read;
 use std::collections::HashMap;
 use std::str;
 use std::path::Path;
+use rocksdb::{DBWithThreadMode as DB, Options, MultiThreaded};
+
 
 static BLOCKS_IN_FILE:usize = 4;
 static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/"; 
 
-static MAIN_BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/MAIN/BLOCKS/";
-static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/CHAIN/";
+static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
 
-static DERIVATIVE_BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/";
+
+static DERIVATIVE_CHAINS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/CHAINS/";
+static DERIVATIVE_DB_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/DB/";
+
+static BLOCKS_FOLDER:&'static str = "BLOCKS/";
+static REFERENCES_FOLDER:&'static str = "REF/";
 
 static CONFIG_FILE:&'static str = "Chain.config";
 static LOOKUP_TABLE_FILE:&'static str = "LookUpTable.dat"; 
@@ -38,706 +45,74 @@ static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
                                 0x5c,0xbc,0x0a,0x7c];
 // God is dead, noone will stop anarchy
 
-pub fn compress_to_file(output_file:String,data:&[u8])->Result<(),&'static str>{
-    let path = Path::new(&output_file);
-    let result = fs::File::create(path);
-    if result.is_err(){
-        return Err("Error creating file");
-    }
-    let target = result.unwrap();
 
-
-    let result = zstd::Encoder::new(target,1);
-    if result.is_err(){
-        return Err("Error creating encoder");
-    }
-    let mut encoder = result.unwrap(); 
-    
-    let result = encoder.write_all(data);
-    if result.is_err(){
-        return Err("Error encoding data");
-    }
-
-    let result = encoder.finish();
-    if result.is_err(){
-        return Err("Error closing file");
-    }
-
-    return Ok(());
+pub struct Chain{
+    db: DB::<MultiThreaded>,
+    height_reference: DB::<MultiThreaded>,
+    height:u64,
+    genesis_hash:[u8;33]
 }
 
-pub fn decompress_from_file(filename:String) -> Result<Vec<u8>,&'static str>{
-    let path = Path::new(&filename);
-    let mut decoded_data:Vec<u8> = Vec::new();
+impl Chain{
+    pub fn new(root_path:&str) -> Result<Chain,&'static str>{
 
-    let result = fs::File::open(path);
-    if result.is_err(){
-        return Err("Error opening file");
-    }
-    let file = result.unwrap();
-    
-    let result = zstd::Decoder::new(file);
-    if result.is_err(){
-        return Err("Error creating decoder");
-    }
-    let mut decoder = result.unwrap();
+        let root = String::from(root_path);
+        let path_blocks_st = root.clone() + BLOCKS_FOLDER;
+        let path_references_st = root.clone() + REFERENCES_FOLDER;
+        let path_height_st = root+CONFIG_FILE;
 
-    let result = decoder.read_to_end(&mut decoded_data);
-    if result.is_err(){
-        return Err("Error reading file");
-    }
+        let path_blocks = Path::new(&path_blocks_st);
+        let path_reference = Path::new(&path_references_st);
+        let path_height = Path::new(&path_height_st);
 
-    return Ok(decoded_data);
-}
-
-pub fn read_lookup_table(file_path:String) -> 
-                    Result<HashMap<[u8;32],u64>,&'static str>{
-
-    let result = decompress_from_file(file_path);
-    if result.is_err(){
-        return Err("Error decompressing data");
-    }
-
-    let decompressed_data = result.unwrap();
-
-    if decompressed_data.len()%40 != 0{
-        return Err("Bad Data");
-    }
-
-    let mut lookup_table_files:HashMap<[u8;32],u64> = HashMap::new(); 
-
-    let mut offset = 0;
-    while offset < decompressed_data.len(){
-        let key:[u8;32] = unsafe{ transmute_copy(&decompressed_data[offset])};
-        let value:u64 = unsafe{ transmute_copy(&decompressed_data[offset+32])};
-            
-        lookup_table_files.insert(key,value);
-        offset += 40;
-    }
-
-    return Ok(lookup_table_files); 
-}
-
-pub fn dump_lookup_table(table:&HashMap<[u8;32],u64>,
-                    file_path:String) -> Result<(),&'static str>{
-    
-    let mut data_to_compress:Vec<u8> = Vec::with_capacity(table.len()*40);
-    for (key,value) in table.iter(){
-        for byte in key{
-            data_to_compress.push(*byte);
-        }
-        for byte in value.to_be_bytes(){
-            data_to_compress.push(byte);
-        }
-    }
-
-    let result = compress_to_file(String::from(file_path), 
-                                        &data_to_compress);
-    if result.is_err(){
-        return Err("Error compressing and dumping lookup table");
-    }
-                                
-    return Ok(());
-}
-
-pub struct Config{
-    genesis_block:[u8;32],
-    amount_of_files:u64,
-}
-
-impl Config{
-    pub fn read(file_path:String)->Result<Config,&'static str>{
-        let path = Path::new(&file_path);
-        let result = fs::File::open(path);
+        // open blocks DB
+        let result = DB::<MultiThreaded>::open_default(
+                                            path_blocks);
         if result.is_err(){
-            return Err("Error opening config file");
+            return Err("Error opening blocks db");
         }
-    
-        let mut file = result.unwrap();
-    
-        let mut genesis_block:[u8;32] = [0;32];
-    
-        let result = file.read_exact(&mut genesis_block);
-        if result.is_err(){
-            return Err("Error in reading genesis block");
-        }
-    
-        let mut amount_of_files_bytes:[u8;8] = [0;8];
-    
-        let result = file.read_exact(&mut amount_of_files_bytes);
-        if result.is_err(){
-            return Err("Error reading amount of files");
-        }
-            
-        let amount_of_files = u64::from_be_bytes(amount_of_files_bytes);
-    
-        return Ok(Config{genesis_block:genesis_block,
-                amount_of_files:amount_of_files});
-    }
+        let db = result.unwrap();
 
-    pub fn dump(&self,file_path:String) -> Result<(),&'static str>{
-        let path = Path::new(&file_path);
-        let result = fs::File::create(path);
+        // open height references DB
+        let result = DB::<MultiThreaded>::open_default(
+                                            path_reference);
         if result.is_err(){
-            return Err("Error creating file");
+            return Err("Error opening references db");
+        }
+        let references = result.unwrap();
+        
+        // read height from config
+        let result= File::open(path_height);
+        if result.is_err(){
+            return Err("Could not open config");
         }
         let mut file = result.unwrap();
-        
-        let result = file.write_all(&self.genesis_block);
-        if result.is_err(){
-            return Err("Error writing genesis block");
-        }
-
-        let result = file.write_all(&self.amount_of_files.to_be_bytes());
-        if result.is_err(){
-            return Err("Error writing amount of files");
-        }
-
-        return Ok(());
-    }
-}
-
-pub struct MainChain{
-    config:Config,
-    lookup_table:HashMap<[u8;32],u64>
-}
-
-impl MainChain{
-
-    pub fn dump_blocks(&mut self, 
-                    blocks:&[Block::TransactionBlock])->
-                    Result<(),&'static str>{
-        
-        let blocks_amount = blocks.len();
-        
-        if blocks_amount > BLOCKS_IN_FILE 
-            || blocks_amount == 0{
-            return Err("Wrong");
-        }
-
-        let mut dump_data_size:usize = 1 + (blocks_amount*4);
-        for block in blocks.iter(){
-            let dump_size = block.get_dump_size();
-            dump_data_size += dump_size;
-        }
-
-        let mut to_dump:Vec<u8> = Vec::with_capacity(dump_data_size);
-        
-        to_dump.push(blocks_amount as u8);
-
-        for block in blocks.iter(){
-            let result = block.dump();
-            if result.is_err(){
-                return Err("Error dumping block");
-            }
-            
-            let mut dump = result.unwrap();
-
-            to_dump.extend((dump.len() as u32).to_be_bytes().iter());
-
-            to_dump.append(&mut dump);
-        }
-
-        let first_block_hash = &blocks[0].get_hash();
-        let result = self.lookup_table.get(first_block_hash);
-        let mut filename = self.config.amount_of_files;
-        let mut file_was_found:bool = false;
-        if result.is_some(){
-            filename = *result.unwrap();
-            file_was_found = true;
-        }
-
-        let path = String::from(MAIN_BLOCKS_DIRECTORY) 
-                            + &filename.to_string();
-
-        let result = compress_to_file(path, &to_dump);
-        if result.is_err(){
-            return Err("Could not save file");
-        }
-
-        if !file_was_found{
-            self.config.amount_of_files += 1;
-        }
-        for block in blocks.iter(){
-            self.lookup_table.insert(block.get_hash(), 
-                                            filename);
-        }
-
-        return Ok(());
-    }
-    
-    pub fn parse_blocks(&self,hash:&[u8;32]) -> Result<Vec<Block::TransactionBlock>,&'static str>{
-        let result = self.lookup_table.get(hash);
-        if result.is_none(){
-            return Err("Could not locate file");
-        }
-        let filename = result.unwrap();
-
-        let result = self.get_blocks_by_index(*filename);
-        if result.is_err(){
-            return Err("Error parsing blocks");
-        }
-
-        return Ok(result.unwrap());
-
-    }
-
-    pub fn get_blocks_by_index(&self,index:u64) -> Result<Vec<Block::TransactionBlock>,&'static str>{
-        if index >= self.config.amount_of_files{
-            return Err("Bad index");
-        }
-        let path = String::from(MAIN_BLOCKS_DIRECTORY) + &index.to_string();
-
-        let result = decompress_from_file(path);
-        if result.is_err(){
-            return Err("Could not decompress file");
-        }
-
-        let decompressed_data = result.unwrap();
-        let size_of_data = decompressed_data.len();
-        if size_of_data == 0{
-            return Err("Empty file");
-        }
-        let amount:usize = decompressed_data[0] as usize;
-
-        let mut to_return:Vec<Block::TransactionBlock> = Vec::with_capacity(amount);
-        let mut offset:usize = 1;
-        for _ in 0..amount{
-            if size_of_data - offset < 4{
-                return Err("Could not parse size of block");
-            }
-            let mut block_size:u32 = (decompressed_data[offset] as u32)<<24;
-            offset += 1;
-            block_size += (decompressed_data[offset] as u32)<<16;
-            offset += 1;
-            block_size += (decompressed_data[offset] as u32)<<8;
-            offset += 1;
-            block_size += decompressed_data[offset] as u32;
-            offset += 1;
-
-            if size_of_data - offset < block_size as usize{
-                return Err("Could not parse block");
-            }
-
-            let result = Block::TransactionBlock::parse(&decompressed_data[offset..offset+block_size as usize],
-                                                        block_size);
-            
-            if result.is_err(){
-                return Err("could not parse block");
-            }
-            offset += block_size as usize;
-            to_return.push(result.unwrap());
-
-        }
-
-        return Ok(to_return);
-    }
-
-    pub fn get_blocks_by_height(&self,height:u64) -> Result<Vec<Block::TransactionBlock>,&'static str>{
-        let index = height % 4;
-        let result = self.get_blocks_by_index(index);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        return Ok(result.unwrap());
-    }
-
-    pub fn dump_config(&self) -> Result<(),&'static str>{
-
-        let config_path = String::from(MAIN_CHAIN_DIRECTORY) 
-                    + CONFIG_FILE;
-        let table_path = String::from(MAIN_CHAIN_DIRECTORY) 
-                    + LOOKUP_TABLE_FILE;
-
-        let result = self.config.dump(String::from(config_path));
-        if result.is_err(){
-            return Err("Error dumping config");
-        }
-
-        let result = dump_lookup_table(&self.lookup_table,
-                                        table_path);
-        if result.is_err(){
-            return Err("Error dumping lookup table");
-        }
-
-        return Ok(());
-    }
-
-    pub fn with_config() -> Result<MainChain,&'static str>{
-
-        let config_path = String::from(MAIN_CHAIN_DIRECTORY) 
-                    + CONFIG_FILE;
-        let table_path = String::from(MAIN_CHAIN_DIRECTORY) 
-                    + LOOKUP_TABLE_FILE;
-
-        let result = Config::read(String::from(config_path));
+        let mut height_bytes:[u8;8] = [0;8];
+        let result = file.read_exact(&mut height_bytes);
         if result.is_err(){
             return Err("Error reading config");
         }
-        let config = result.unwrap();
+        let height:u64 = u64::from_be_bytes(height_bytes);
 
-        let result = read_lookup_table(String::from(table_path));
+        let mut genesis_hash:[u8;33] = [0;33];
+        let result = file.read_exact(&mut genesis_hash);
         if result.is_err(){
-            return Err("Error reading lookup table");
+            return Err("Error reading genesis hash from config");
         }
-        let lookup_table = result.unwrap();
 
-        return Ok(MainChain{config:config,
-                            lookup_table:lookup_table});
-
-    }
-}
-
-
-pub struct DerivativeChain{
-    config:Config,
-    lookup_table:HashMap<[u8;32],u64>,
-    pathname:u64,
-    id:u64
-}
-
-impl DerivativeChain{
-
-    pub fn with_config(pathname:u64,
-                        id:u64) -> Result<DerivativeChain,
-                                        &'static str>{
-
-        let root_path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
-                    + &pathname.to_string()
-                    + "/"
-                    + &id.to_string()
-                    + "/"; 
-        
-        let config_path = root_path.clone()  
-                            + CONFIG_FILE;
-        
-        let result = Config::read(config_path);
-        if result.is_err(){
-            return Err("Error reading config");
-        } 
-        let config = result.unwrap();
-
-        let lookup_table_path = root_path
-                                + LOOKUP_TABLE_FILE;
-
-        let result = read_lookup_table(lookup_table_path);
-        if result.is_err(){
-            return Err("Error reading lookup table");
-        }
-        let lookup_table = result.unwrap();
-
-
-        return Ok(DerivativeChain{config:config,
-                                lookup_table:lookup_table,
-                                pathname:pathname,
-                                id:id});        
+        return Ok(Chain{db:db,
+                height_reference:references,
+                height:height,
+                genesis_hash:genesis_hash});
     }
 
-    pub fn dump_config(&self) -> Result<(),&'static str>{
-        let root_path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
-                    + &self.pathname.to_string()
-                    + "/"
-                    + &self.id.to_string()
-                    + "/"; 
-        
-        let config_path = root_path.clone() 
-                            + CONFIG_FILE;
-        let lookup_table_path = root_path
-                            + LOOKUP_TABLE_FILE;
-
-        let result = self.config.dump(config_path);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-
-        let result = dump_lookup_table(&self.lookup_table,
-                                    lookup_table_path);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-
-        return Ok(()); 
-    }
-
-    pub fn dump_blocks(&mut self, 
-            blocks:&[Block::TransactionBlock])->
-            Result<(),&'static str>{
-
-        let blocks_amount = blocks.len();
-
-        if blocks_amount > BLOCKS_IN_FILE 
-                || blocks_amount == 0{
-            return Err("Wrong");
-        }
-
-        let mut dump_data_size:usize = 1 + (blocks_amount*4);
-        for block in blocks.iter(){
-            let dump_size = block.get_dump_size();
-            dump_data_size += dump_size;
-        }
-
-        let mut to_dump:Vec<u8> = Vec::with_capacity(dump_data_size);
-
-        to_dump.push(blocks_amount as u8);
-
-        for block in blocks.iter(){
-            let result = block.dump();
-            if result.is_err(){
-                return Err(result.err().unwrap());
-            }
-
-            let mut dump = result.unwrap();
-
-            to_dump.extend((dump.len() as u32).to_be_bytes().iter());
-
-            to_dump.append(&mut dump);
-        }
-
-        let first_block_hash = &blocks[0].get_hash();
-        let result = self.lookup_table.get(first_block_hash);
-        let mut filename = self.config.amount_of_files;
-        let mut file_was_found:bool = false;
-        if result.is_some(){
-            filename = *result.unwrap();
-            file_was_found = true;
-        }
-
-        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
-                            +&self.pathname.to_string() 
-                            +"/" 
-                            +&self.id.to_string()
-                            +"/" 
-                            +&filename.to_string();
+    pub fn add_block(block:&TransactionBlock) -> Result<(),&'static str>{
 
 
-        let result = compress_to_file(path, &to_dump);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
 
-        if !file_was_found{
-            self.config.amount_of_files += 1;
-        }
-
-        for block in blocks.iter(){
-            self.lookup_table.insert(block.get_hash(), 
-                                            filename);
-        }
 
         return Ok(());
     }
-
-    pub fn parse_blocks(&self,hash:&[u8;32]) -> Result<Vec<Block::TokenBlock>,&'static str>{
-        let result = self.lookup_table.get(hash);
-        if result.is_none(){
-            return Err("Could not locate file");
-        }
-        let filename = result.unwrap();
-
-        let result = self.get_blocks_by_index(*filename);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-
-        return Ok(result.unwrap());
-
-    }
-
-    pub fn get_blocks_by_height(&self,height:u64) -> Result<Vec<Block::TokenBlock>,&'static str>{
-        let index = height % 4;
-        let result = self.get_blocks_by_index(index);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        return Ok(result.unwrap());
-    }
-
-    pub fn get_blocks_by_index(&self,index:u64) -> Result<Vec<Block::TokenBlock>,&'static str>{
-        if index >= self.config.amount_of_files{
-            return Err("Bad index");
-        }
-
-        let path = String::from(DERIVATIVE_BLOCKS_DIRECTORY) 
-                            +&self.pathname.to_string() 
-                            +"/" 
-                            +&self.id.to_string()
-                            +"/" 
-                            +&index.to_string();
-
-        let result = decompress_from_file(path);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-
-        let decompressed_data = result.unwrap();
-        let size_of_data = decompressed_data.len();
-        if size_of_data == 0{
-            return Err("Error, empty file");
-        }
-        let amount:usize = decompressed_data[0] as usize;
-
-        let mut to_return:Vec<Block::TokenBlock> = Vec::with_capacity(amount);
-        let mut offset:usize = 1;
-        for _ in 0..amount{
-            if size_of_data - offset < 4{
-                return Err("Could not parse size of block");
-            }
-            let mut block_size:u32 = (decompressed_data[offset] as u32)<<24;
-            offset += 1;
-            block_size += (decompressed_data[offset] as u32)<<16;
-            offset += 1;
-            block_size += (decompressed_data[offset] as u32)<<8;
-            offset += 1;
-            block_size += decompressed_data[offset] as u32;
-            offset += 1;
-
-            if size_of_data - offset < block_size as usize{
-                return Err("Could not parse block");
-            }
-
-            let result = Block::TokenBlock::parse(&decompressed_data[offset..offset+block_size as usize],
-                                                        block_size);
-            
-            if result.is_err(){
-                return Err(result.err().unwrap());
-            }
-
-            offset += block_size as usize;
-            to_return.push(result.unwrap());
-        }
-
-        return Ok(to_return);
-    }
-
 }
 
 
-pub struct BlockChainTree{
-    lookup_table:HashMap<[u8;33],(u64,u64)>,
-    main_chain:MainChain,
-}
-
-impl BlockChainTree{
-    fn read_lookup_table() -> Result<HashMap<[u8;33],(u64,u64)>,&'static str>{
-        
-        let file_path = String::from(BLOCKS_DIRECTORY)
-                            + LOOKUP_TABLE_FILE;
-        let result = decompress_from_file(file_path);
-        if result.is_err(){
-            return Err("Error decompressing data");
-        }
-
-        let decompressed_data = result.unwrap();
-
-        if decompressed_data.len()%49 != 0{
-            return Err("Bad Data");
-        }
-        
-        let mut lookup_table_files:HashMap<[u8;33],(u64,u64)> = HashMap::new();
-
-        let mut offset:usize = 0;
-
-        while offset != decompressed_data.len(){  
-            let key:[u8;33] = unsafe{transmute_copy(&decompressed_data[offset])};
-            offset += 33;
-
-            let value1:u64 = unsafe{transmute_copy(&decompressed_data[offset])};
-            offset += 8;
-
-            let value2:u64 = unsafe{transmute_copy(&decompressed_data[offset])};
-            offset += 8;
-
-            lookup_table_files.insert(key,(value1,value2));
-        }
-
-        return Ok(lookup_table_files);
-    }
-
-    fn dump_lookup_table(&self) -> Result<(),&'static str>{
-
-        let file_path = String::from(BLOCKS_DIRECTORY)
-                            + LOOKUP_TABLE_FILE;
-        let mut data_to_compress:Vec<u8> = Vec::with_capacity(self.lookup_table.len()*41);
-        for (key,value) in self.lookup_table.iter(){
-            for byte in key{
-                data_to_compress.push(*byte);
-            }
-            for byte in value.0.to_be_bytes(){
-                data_to_compress.push(byte);
-            }
-            for byte in value.1.to_be_bytes(){
-                data_to_compress.push(byte);
-            }
-        }
-                        
-        let result = compress_to_file(String::from(file_path), 
-                                    &data_to_compress);
-        if result.is_err(){
-            return Err("Error compressing and dumping lookup table");
-        }
-                                                        
-        return Ok(());
-        
-    }
-
-    pub fn with_config() -> Result<BlockChainTree,&'static str>{
-        // read main chain
-        let result = MainChain::with_config();
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        let main_chain = result.unwrap();
-
-        // read lookup table
-        let result = BlockChainTree::read_lookup_table();
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        let lookup_table = result.unwrap();
-
-        return Ok(BlockChainTree{lookup_table:lookup_table,
-                                main_chain:main_chain});
-    }
-
-    pub fn get_amount_in_der_block(folder:u64) 
-                                -> Result<u64,&'static str>{
-        
-        let config_file = String::from(DERIVATIVE_BLOCKS_DIRECTORY)
-                            +&folder.to_string()
-                            +"/"
-                            +CONFIG_FILE;
-
-        let path = Path::new(&config_file);
-        
-        let result = fs::File::open(path);
-        if result.is_err(){
-            return Err("Error opening file");
-        }
-        
-        let mut file = result.unwrap();
-
-        let mut amount_of_chains:[u8;8] = [0;8];
-    
-        let result = file.read_exact(&mut amount_of_chains);
-        if result.is_err(){
-            return Err("Error reading amount of files");
-        }
-
-        return Ok(u64::from_be_bytes(amount_of_chains));
-    }
-
-    pub fn get_derivative_chain(&self,address:&[u8;33])
-                            -> Result<DerivativeChain,&'static str>{
-
-        let result = self.lookup_table.get(address);
-        if result.is_none(){
-            return Err("Error, could not find chain for that address");
-        }
-
-        let ids = result.unwrap();
-
-        return DerivativeChain::with_config(ids.0, ids.1);
-    }
-
-
-}
