@@ -138,6 +138,9 @@ impl Chain{
     }
 
     pub fn find_by_height(&self,height:u64) -> Result<Option<TransactionBlock>,&'static str>{
+        if height > self.height{
+            return Ok(None);
+        }
         let result = self.db.get(height.to_be_bytes());
         if result.is_err(){
             return Err("Error reading block");
