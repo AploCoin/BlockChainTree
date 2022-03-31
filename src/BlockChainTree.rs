@@ -5,9 +5,10 @@ use std::convert::TryInto;
 use crate::Tools;
 use crate::Transaction;
 use crate::Token;
-use crate::Block::{TransactionBlock, TokenBlock};
+use crate::Block::{TransactionBlock, TokenBlock, TransactionToken};
 use std::mem::transmute_copy;
 use zstd;
+use std::collections::VecDeque;
 
 use std::env;
 use std::fs;
@@ -21,8 +22,9 @@ use std::path::Path;
 use rocksdb::{DBWithThreadMode as DB, Options, MultiThreaded};
 
 
-static BLOCKS_IN_FILE:usize = 4;
-static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/"; 
+static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/";
+
+static AMMOUNT_SUMMARY:&'static str = "./BlockChainTree/SUMMARY/";
 
 static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
 
@@ -44,6 +46,8 @@ static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
                                 0x5c,0x0f,0x01,0x9d,
                                 0x5c,0xbc,0x0a,0x7c];
 // God is dead, noone will stop anarchy
+
+static MAX_TRANSACTIONS_PER_BLOCK:usize = 3000;
 
 
 pub struct Chain{
@@ -181,6 +185,13 @@ impl Chain{
 
     }
 
+}
+
+
+pub struct BlockChainTree{
+    deriv_chains_db: DB::<MultiThreaded>,
+    transactions_pool: VecDeque<TransactionToken>,
+    summary_db: DB::<MultiThreaded>,
 }
 
 
