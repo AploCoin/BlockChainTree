@@ -55,7 +55,6 @@ pub struct Chain{
 
 impl Chain{
     pub fn new(root_path:&str) -> Result<Chain,&'static str>{
-
         let root = String::from(root_path);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
@@ -106,13 +105,55 @@ impl Chain{
                 genesis_hash:genesis_hash});
     }
 
-    pub fn add_block(block:&TransactionBlock) -> Result<(),&'static str>{
+    pub fn add_block(&mut self,
+                    block:&TransactionBlock) -> Result<(),&'static str>{
+
+        let result = block.dump();
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let dump = result.unwrap();
+
+        let hash = Tools::hash(&dump);
 
 
+        let result = self.db.put(hash,dump);
+        if result.is_err(){
+            return Err("Error adding block");
+        }
 
+        let result = self.height_reference.put(self.height.to_be_bytes(),
+                                                hash);
+        if result.is_err(){
+            return Err("Error adding reference");
+        }
+
+        self.height += 1;
 
         return Ok(());
     }
+
+    pub fn get_height(&self) -> u64{
+        return self.height;
+    }
+
+    pub fn find_by_height(&self,height:u64) -> Result<Option<TransactionBlock>,&'static str>{
+        let result = self.db.get(height.to_be_bytes());
+        if result.is_err(){
+            return Err("Error reading block");
+        }
+        let result = result.unwrap();
+        if result.is_none(){
+            return Ok(None);
+        }
+        let dump = result.unwrap();
+
+        let block = TransactionBlock::parse(&dump,dump.len() as u32);
+
+        return Ok(Some(block));
+
+    }
+
 }
 
 

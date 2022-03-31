@@ -419,13 +419,14 @@ impl TransactionBlock{
         return Ok(transaction_block);
 
     }
-    pub fn get_hash(&self) -> [u8;32]{
-        let mut hasher = Sha256::new();
-        let dump = self.dump().unwrap();
+    pub fn get_hash(&self) -> Result<[u8;32],&'static str>{
+        let result = self.dump();
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let dump = result.unwrap();
 
-        hasher.update(dump);
-        let result:[u8;32] = hasher.finalize().as_slice().try_into().unwrap();
-        return result;
+        return Ok(Tools::hash(&dump));
     }
 
 }

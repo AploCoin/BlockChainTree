@@ -1,119 +1,6 @@
 use num_bigint::BigUint;
-
-pub fn count_u64_digits(input:u64)->u64{
-    if input < 10000000000 {
-        // [10,1]
-        if input < 100000 {
-            // [5,1]
-            if input < 1000 {
-                // [3,1]
-                if input < 100 {
-                    // [2,1]
-                    if input < 10 {
-                        return 1;
-                    }
-                    else {
-                        return 2;
-                    }
-                }
-                else {
-                    return 3;
-                }
-            }
-            else {
-                if input < 10000 {
-                    return 4;
-                }
-                else {
-                    return 5;
-                }
-
-            }
-        }
-        else {
-            // [10,6]
-            if input < 100000000 {
-                // [8,6]
-                if input < 10000000 {
-                    // [7,6]
-                    if input < 1000000 {
-                        return 6;
-                    }
-                    else {
-                        return 7;
-                    }
-                }
-                else {
-                    return 8;
-                }
-            }
-            else {
-                if input < 1000000000 {
-                    return 9;
-                }
-                else {
-                    return 10;
-                }
-            }
-        }
-    }
-    else {
-        // [20,11]
-        if input < 1000000000000000 {
-            // [15,11]
-            if input < 10000000000000 {
-                // [13,11]
-                if input < 1000000000000 {
-                    if input < 100000000000 {
-                        return 11;
-                    }
-                    else {
-                        return 12;
-                    }
-                }
-                else {
-                    return 13;
-                }
-            }
-            else {
-                //[15,14]
-                if input < 100000000000000 {
-                    return 14;
-                }
-                else {
-                    return 15;
-                }
-            }
-        }
-        else {
-            // [20,16]
-            if input < 1000000000000000000 {
-                // [18,16]
-                if input < 100000000000000000 {
-                    // [17,16]
-                    if input < 10000000000000000 {
-                        return 16;
-                    }
-                    else {
-                        return 17;
-                    }
-                }
-                else {
-                    return 18;
-                }
-            }
-            else {
-                // [20,19]
-                if input < 10000000000000000000 {
-                    return 19;
-                }
-                else {
-                    return 20;
-                }
-            }
-        }
-    }
-}
+use sha2::{Sha256, Digest};
+use std::convert::TryInto;
 
 
 pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(),&'static str>{
@@ -154,4 +41,12 @@ pub fn bigint_size(number:&BigUint) -> usize{
     }
 
     return amount_byte_size;
+}
+
+
+pub fn hash(data:&[u8]) -> [u8;32]{
+    let mut hasher = Sha256::new();
+    hasher.update(data);
+    let result:[u8;32] = hasher.finalize().as_slice().try_into().unwrap();
+    return result;
 }
