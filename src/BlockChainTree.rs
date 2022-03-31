@@ -148,9 +148,33 @@ impl Chain{
         }
         let dump = result.unwrap();
 
-        let block = TransactionBlock::parse(&dump,dump.len() as u32);
-
+        let result = TransactionBlock::parse(&dump,dump.len() as u32);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let block = result.unwrap();
         return Ok(Some(block));
+
+    }
+
+    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<TransactionBlock>,&'static str>{
+        let result = self.height_reference.get(hash);
+        if result.is_err(){
+            return Err("Error getting height");
+        }
+        let result = result.unwrap();
+        if result.is_none(){
+            return Ok(None);
+        }
+        let height = u64::from_be_bytes(result.unwrap().try_into().unwrap());
+
+        let result = self.find_by_height(height);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let block = result.unwrap();
+
+        return Ok(block);
 
     }
 
