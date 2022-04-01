@@ -153,6 +153,10 @@ impl Chain{
         return self.height;
     }
 
+    pub fn get_difficulty(&self) -> u8{
+        return self.difficulty;
+    }
+
     pub fn find_by_height(&self,height:u64) -> Result<Option<TransactionBlock>,&'static str>{
         if height > self.height{
             return Ok(None);
