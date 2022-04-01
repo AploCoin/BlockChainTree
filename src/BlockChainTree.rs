@@ -3,7 +3,7 @@ use num_bigint::BigUint;
 use sha2::{Sha256, Digest};
 use std::convert::TryInto;
 use crate::Tools;
-use crate::Transaction;
+use crate::Transaction::Transaction;
 use crate::Token;
 use crate::Block::{TransactionBlock, TokenBlock, TransactionToken};
 use std::mem::transmute_copy;
@@ -21,7 +21,7 @@ use std::path::Path;
 use rocksdb::{DBWithThreadMode as DB, Options, MultiThreaded};
 
 
-static BLOCKS_DIRECTORY:&'static str = "./BlockChainTree/";
+static BLOCKCHAIN_DIRECTORY:&'static str = "./BlockChainTree/";
 
 static AMMOUNT_SUMMARY:&'static str = "./BlockChainTree/SUMMARY/";
 
@@ -35,7 +35,8 @@ static BLOCKS_FOLDER:&'static str = "BLOCKS/";
 static REFERENCES_FOLDER:&'static str = "REF/";
 
 static CONFIG_FILE:&'static str = "Chain.config";
-static LOOKUP_TABLE_FILE:&'static str = "LookUpTable.dat"; 
+static LOOKUP_TABLE_FILE:&'static str = "LookUpTable.dat";
+static TRANSACTIONS_POOL:&'static str = "TRXS_POOL.pool"; 
 static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
                                 0x67,0x57,0x8e,0x85,
                                 0x39,0xa9,0xcf,0xe0,
@@ -509,7 +510,7 @@ impl DerivativeChain{
 
 
 pub struct BlockChainTree{
-    transactions_pool: VecDeque<TransactionToken>,
+    trxs_pool: VecDeque<TransactionToken>,
     summary_db: DB::<MultiThreaded>,
     main_chain:Chain,
     opened_derivatives:HashMap<[u8;32],(u32,DerivativeChain)>
@@ -518,6 +519,83 @@ pub struct BlockChainTree{
 
 
 impl BlockChainTree{
+    pub fn with_config() -> Result<BlockChainTree,&'static str>{
+        let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
 
+        // open summary db
+        let result = DB::<MultiThreaded>::open_default(
+                                        summary_db_path);
+        if result.is_err(){
+            return Err("Error opening summary db");
+        }
+        let summary_db = result.unwrap();
+
+        // read transactions pool
+        let pool_path = String::from(BLOCKCHAIN_DIRECTORY)
+                        +TRANSACTIONS_POOL;
+        let pool_path = Path::new(&pool_path);
+
+        let result = File::open(pool_path);
+        if result.is_err(){
+            return Err("Error opening transactions pool");
+        }
+        let mut file = result.unwrap();
+
+        // read amount of transactions
+        let mut buf:[u8;4] = [0;4];
+        let result = file.read_exact(&mut buf);
+        if result.is_err(){
+            return Err("Error reading amount of transactions");
+        }
+        let trxs_amount = u32::from_be_bytes(buf);
+
+        // allocate VecDeque
+        let mut trxs_pool = VecDeque::<TransactionToken>::with_capacity(trxs_amount as usize);
+
+        // parsing transactions
+        for _ in 0..trxs_amount{
+            let result = file.read_exact(&mut buf);
+            if result.is_err(){
+                return Err("Error reading transaction size");
+            }
+            let tr_size = u32::from_be_bytes(buf);
+
+            let mut transaction_buffer = vec![0u8; (tr_size-1) as usize];
+
+            let result = file.read_exact(&mut transaction_buffer);
+            if result.is_err(){
+                return Err("Error reading transaction");
+            }
+
+            if transaction_buffer[0] == 0{
+                let result = Transaction::parse_transaction(&transaction_buffer[1..],
+                                                            (tr_size-1) as u64);
+                if result.is_err(){
+                    return Err(result.err().unwrap());
+                }
+                let transaction = result.unwrap();
+
+                let mut tr_wrapped = TransactionToken::new();
+                tr_wrapped.set_transaction(transaction).unwrap();
+                trxs_pool.push_front(tr_wrapped);
+
+            }else{
+                return Err("Not implemented")
+            }
+        }
+
+        // opening main chain
+        let result = Chain::new(MAIN_CHAIN_DIRECTORY);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let main_chain = result.unwrap();
+
+
+        return Ok(BlockChainTree{trxs_pool:trxs_pool,
+                                summary_db:summary_db,
+                                main_chain:main_chain,
+                                opened_derivatives:HashMap::new()});
+    }
 }
 
