@@ -1,6 +1,12 @@
 use num_bigint::BigUint;
 use sha2::{Sha256, Digest};
 use std::convert::TryInto;
+use std::mem::transmute_copy;
+use zstd;
+use std::fs::File;
+use std::io::Write;
+use std::path::Path;
+use std::io::Read;
 
 
 pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(),&'static str>{
@@ -49,4 +55,57 @@ pub fn hash(data:&[u8]) -> [u8;32]{
     hasher.update(data);
     let result:[u8;32] = hasher.finalize().as_slice().try_into().unwrap();
     return result;
+}
+
+
+pub fn compress_to_file(output_file:String,data:&[u8])->Result<(),&'static str>{
+    let path = Path::new(&output_file);
+    let result = File::create(path);
+    if result.is_err(){
+        return Err("Error creating file");
+    }
+    let target = result.unwrap();
+
+
+    let result = zstd::Encoder::new(target,1);
+    if result.is_err(){
+        return Err("Error creating encoder");
+    }
+    let mut encoder = result.unwrap(); 
+    
+    let result = encoder.write_all(data);
+    if result.is_err(){
+        return Err("Error encoding data");
+    }
+
+    let result = encoder.finish();
+    if result.is_err(){
+        return Err("Error closing file");
+    }
+
+    return Ok(());
+}
+
+pub fn decompress_from_file(filename:String) -> Result<Vec<u8>,&'static str>{
+    let path = Path::new(&filename);
+    let mut decoded_data:Vec<u8> = Vec::new();
+
+    let result = File::open(path);
+    if result.is_err(){
+        return Err("Error opening file");
+    }
+    let file = result.unwrap();
+    
+    let result = zstd::Decoder::new(file);
+    if result.is_err(){
+        return Err("Error creating decoder");
+    }
+    let mut decoder = result.unwrap();
+
+    let result = decoder.read_to_end(&mut decoded_data);
+    if result.is_err(){
+        return Err("Error reading file");
+    }
+
+    return Ok(decoded_data);
 }

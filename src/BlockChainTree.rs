@@ -7,7 +7,6 @@ use crate::Transaction;
 use crate::Token;
 use crate::Block::{TransactionBlock, TokenBlock, TransactionToken};
 use std::mem::transmute_copy;
-use zstd;
 use std::collections::VecDeque;
 
 use std::env;
@@ -507,7 +506,7 @@ pub struct BlockChainTree{
     transactions_pool: VecDeque<TransactionToken>,
     summary_db: DB::<MultiThreaded>,
     main_chain:Chain,
-    opened_derivatives:HashMap<[u8;32],(u32,Chain)>
+    opened_derivatives:HashMap<[u8;32],(u32,DerivativeChain)>
 
 }
 
