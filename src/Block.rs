@@ -26,7 +26,7 @@ pub struct BasicInfo{
     PoW:BigUint,
     previous_hash:[u8;32],
     height:u64,
-    difficulty:u8
+    difficulty:[u8;32]
 }
 
 
@@ -36,7 +36,7 @@ impl BasicInfo{
                 PoW:BigUint,
                 previous_hash:[u8;32],
                 height:u64,
-                difficulty:u8) -> BasicInfo{
+                difficulty:[u8;32]) -> BasicInfo{
         return BasicInfo{miner:miner,
                         timestamp:timestamp,
                         PoW:PoW,
@@ -50,7 +50,8 @@ impl BasicInfo{
                     + 8
                     + Tools::bigint_size(&self.PoW)
                     + 32
-                    + 8;
+                    + 8
+                    + 32;
         return to_return;
     }
     pub fn dump(&self,buffer:&mut Vec<u8>) -> Result<(),&'static str>{
@@ -76,7 +77,7 @@ impl BasicInfo{
         }
 
         // dumping difficulty
-        buffer.push(self.difficulty);
+        buffer.extend(self.difficulty);
 
         // dumping PoW
         let result = Tools::dump_biguint(&self.PoW, buffer);
@@ -89,40 +90,30 @@ impl BasicInfo{
 
     pub fn parse(data:&[u8]) -> Result<BasicInfo,&'static str>{
         let mut index:usize = 0;
+
+        if data.len() <= 113{
+            return Err("Not enough data to parse");
+        }
         
         // parsing miner
         let miner:[u8;33] = unsafe{transmute_copy(&data[index])};
         index += 33;
 
         // parsing timestamp
-        if data.len() - index < 8{
-            return Err("Could not parse timestamp");
-        }
         let timestamp = bytes_to_u64!(data,index);
         index += 8;
 
         // parsing previous hash
-        if data.len() - index < 32{
-            return Err("Could not parse previous hash");
-        }
-        let mut previous_hash:[u8;32] = [0;32];
-        for i in 0..32{
-            previous_hash[i] = data[index+i];
-        }
+        let previous_hash:[u8;32] = unsafe{transmute_copy(&data[index])};
         index += 32;
 
         // parsing height
-        if data.len() - index < 8{
-            return Err("Could not parse height");
-        }
         let height:u64 = bytes_to_u64!(data,index);
         index += 8;
 
         // parsing difficulty
-        if data.len() - index < 1{
-            return Err("Could not parse timestamp");
-        }
-        let difficulty:u8 = data[index];
+        let difficulty:[u8;32] = unsafe{transmute_copy(&data[index])};
+        index += 32;
         
         // parsing PoW
         let result = Tools::load_biguint(&data[index..]);
