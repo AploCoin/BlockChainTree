@@ -54,7 +54,7 @@ pub struct Chain{
     db: DB::<MultiThreaded>,
     height_reference: DB::<MultiThreaded>,
     height:u64,
-    genesis_hash:[u8;33],
+    genesis_hash:[u8;32],
     difficulty:u8
 }
 
@@ -101,7 +101,7 @@ impl Chain{
         let height:u64 = u64::from_be_bytes(height_bytes);
 
         // read genesis hash
-        let mut genesis_hash:[u8;33] = [0;33];
+        let mut genesis_hash:[u8;32] = [0;32];
         let result = file.read_exact(&mut genesis_hash);
         if result.is_err(){
             return Err("Error reading genesis hash from config");
@@ -231,13 +231,288 @@ impl Chain{
         return Ok(())
     }
 
+    pub fn new_without_config(root_path:&str,
+                            genesis_hash:&[u8;32]) -> Result<Chain,&'static str>{
+        let root = String::from(root_path);
+        let path_blocks_st = root.clone() + BLOCKS_FOLDER;
+        let path_references_st = root.clone() + REFERENCES_FOLDER;
+        
+        let path_blocks = Path::new(&path_blocks_st);
+        let path_reference = Path::new(&path_references_st);
+    
+        // open blocks DB
+        let result = DB::<MultiThreaded>::open_default(
+            path_blocks);
+        if result.is_err(){
+            return Err("Error opening blocks db");
+        }
+        let db = result.unwrap();
+
+        // open height references DB
+        let result = DB::<MultiThreaded>::open_default(
+                    path_reference);
+        if result.is_err(){
+            return Err("Error opening references db");
+        }
+        let references = result.unwrap();
+
+        return Ok(Chain{db:db,
+                        height_reference:references,
+                        height:0,
+                        genesis_hash:*genesis_hash,
+                        difficulty:1});
+    }
+
+}
+
+pub struct DerivativeChain{
+    db: DB::<MultiThreaded>,
+    height_reference: DB::<MultiThreaded>,
+    height:u64,
+    global_height:u64,
+    genesis_hash:[u8;32],
+    difficulty:u8
+}
+
+impl DerivativeChain{
+    pub fn new(root_path:&str) -> Result<DerivativeChain,&'static str>{
+        let root = String::from(root_path);
+        let path_blocks_st = root.clone() + BLOCKS_FOLDER;
+        let path_references_st = root.clone() + REFERENCES_FOLDER;
+        let path_height_st = root+CONFIG_FILE;
+
+        let path_blocks = Path::new(&path_blocks_st);
+        let path_reference = Path::new(&path_references_st);
+        let path_height = Path::new(&path_height_st);
+
+        // open blocks DB
+        let result = DB::<MultiThreaded>::open_default(
+                                            path_blocks);
+        if result.is_err(){
+            return Err("Error opening blocks db");
+        }
+        let db = result.unwrap();
+
+        // open height references DB
+        let result = DB::<MultiThreaded>::open_default(
+                                            path_reference);
+        if result.is_err(){
+            return Err("Error opening references db");
+        }
+        let references = result.unwrap();
+        
+        
+        let result = File::open(path_height);
+        if result.is_err(){
+            return Err("Could not open config");
+        }
+        let mut file = result.unwrap();
+
+        // read height from config
+        let mut height_bytes:[u8;8] = [0;8];
+        let result = file.read_exact(&mut height_bytes);
+        if result.is_err(){
+            return Err("Error reading config");
+        }
+        let height:u64 = u64::from_be_bytes(height_bytes);
+
+        // read genesis hash
+        let mut genesis_hash:[u8;32] = [0;32];
+        let result = file.read_exact(&mut genesis_hash);
+        if result.is_err(){
+            return Err("Error reading genesis hash from config");
+        }
+
+        // read difficulty
+        let mut difficulty:[u8;1] = [0;1];
+        let result = file.read_exact(&mut difficulty);
+        if result.is_err(){
+            return Err("Error reading diffculty and from config");
+        }
+
+        // read global height
+        let mut global_height:[u8;8] = [0;8];
+        let result = file.read_exact(&mut global_height);
+        if result.is_err(){
+            return Err("Error reading global height from config");
+        }
+        let global_height:u64 = u64::from_be_bytes(global_height);
+
+        return Ok(DerivativeChain{db:db,
+                height_reference:references,
+                height:height,
+                genesis_hash:genesis_hash,
+                difficulty:difficulty[0],
+                global_height:global_height});
+    }
+
+    pub fn add_block(&mut self,
+                    block:&TokenBlock) -> Result<(),&'static str>{
+
+        let result = block.dump();
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let dump = result.unwrap();
+
+        let hash = Tools::hash(&dump);
+
+
+        let result = self.db.put(hash,dump);
+        if result.is_err(){
+            return Err("Error adding block");
+        }
+
+        let result = self.height_reference.put(self.height.to_be_bytes(),
+                                                hash);
+        if result.is_err(){
+            return Err("Error adding reference");
+        }
+
+        self.height += 1;
+
+        return Ok(());
+    }
+
+    pub fn get_height(&self) -> u64{
+        return self.height;
+    }
+
+    pub fn get_difficulty(&self) -> u8{
+        return self.difficulty;
+    }
+
+    pub fn get_global_height(&self) -> u64{
+        return self.global_height;
+    }
+
+    pub fn find_by_height(&self,height:u64) -> Result<Option<TokenBlock>,&'static str>{
+        if height > self.height{
+            return Ok(None);
+        }
+        let result = self.db.get(height.to_be_bytes());
+        if result.is_err(){
+            return Err("Error reading block");
+        }
+        let result = result.unwrap();
+        if result.is_none(){
+            return Ok(None);
+        }
+        let dump = result.unwrap();
+
+        let result = TokenBlock::parse(&dump,dump.len() as u32);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let block = result.unwrap();
+        return Ok(Some(block));
+
+    }
+
+    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<TokenBlock>,&'static str>{
+        let result = self.height_reference.get(hash);
+        if result.is_err(){
+            return Err("Error getting height");
+        }
+        let result = result.unwrap();
+        if result.is_none(){
+            return Ok(None);
+        }
+        let height = u64::from_be_bytes(result.unwrap().try_into().unwrap());
+
+        let result = self.find_by_height(height);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let block = result.unwrap();
+
+        return Ok(block);
+
+    }
+
+    pub fn dump_config(&self, root_path:&str) -> Result<(),&'static str>{
+        let root = String::from(root_path);
+        let path_config = root+CONFIG_FILE;
+
+        let result = File::create(path_config);
+        if result.is_err(){
+            return Err("Could not open config");
+        }
+        let mut file = result.unwrap();
+
+        let result = file.write_all(
+                            &self.height.to_be_bytes());
+        if result.is_err(){
+            return Err("Error writing height");
+        }
+
+        let result = file.write_all(&self.genesis_hash);
+        if result.is_err(){
+            return Err("Error writing genesis block");
+        }
+
+        let result = file.write_all(
+                        &self.difficulty.to_be_bytes());
+        if result.is_err(){
+            return Err("Error writing difficulty");
+        }
+
+        let result = file.write_all(
+                        &self.global_height.to_be_bytes());
+        if result.is_err(){
+            return Err("Error writing global height");
+        }
+
+        return Ok(())
+    }
+
+    pub fn new_without_config(root_path:&str,
+                            genesis_hash:&[u8;32],
+                            global_height:u64) -> Result<DerivativeChain,&'static str>{
+        let root = String::from(root_path);
+        let path_blocks_st = root.clone() + BLOCKS_FOLDER;
+        let path_references_st = root.clone() + REFERENCES_FOLDER;
+        
+        let path_blocks = Path::new(&path_blocks_st);
+        let path_reference = Path::new(&path_references_st);
+    
+        // open blocks DB
+        let result = DB::<MultiThreaded>::open_default(
+            path_blocks);
+        if result.is_err(){
+            return Err("Error opening blocks db");
+        }
+        let db = result.unwrap();
+
+        // open height references DB
+        let result = DB::<MultiThreaded>::open_default(
+                    path_reference);
+        if result.is_err(){
+            return Err("Error opening references db");
+        }
+        let references = result.unwrap();
+
+        return Ok(DerivativeChain{db:db,
+                        height_reference:references,
+                        height:0,
+                        genesis_hash:*genesis_hash,
+                        difficulty:1,
+                        global_height:global_height});
+    }
+
 }
 
 
 pub struct BlockChainTree{
-    deriv_chains_db: DB::<MultiThreaded>,
     transactions_pool: VecDeque<TransactionToken>,
     summary_db: DB::<MultiThreaded>,
+    main_chain:Chain,
+    opened_derivatives:HashMap<[u8;32],(u32,Chain)>
+
 }
 
+
+impl BlockChainTree{
+
+}
 
