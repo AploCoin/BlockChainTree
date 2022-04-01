@@ -54,7 +54,8 @@ pub struct Chain{
     db: DB::<MultiThreaded>,
     height_reference: DB::<MultiThreaded>,
     height:u64,
-    genesis_hash:[u8;33]
+    genesis_hash:[u8;33],
+    difficulty:u8
 }
 
 impl Chain{
@@ -84,12 +85,14 @@ impl Chain{
         }
         let references = result.unwrap();
         
-        // read height from config
-        let result= File::open(path_height);
+        
+        let result = File::open(path_height);
         if result.is_err(){
             return Err("Could not open config");
         }
         let mut file = result.unwrap();
+
+        // read height from config
         let mut height_bytes:[u8;8] = [0;8];
         let result = file.read_exact(&mut height_bytes);
         if result.is_err(){
@@ -97,16 +100,25 @@ impl Chain{
         }
         let height:u64 = u64::from_be_bytes(height_bytes);
 
+        // read genesis hash
         let mut genesis_hash:[u8;33] = [0;33];
         let result = file.read_exact(&mut genesis_hash);
         if result.is_err(){
             return Err("Error reading genesis hash from config");
         }
 
+        // read difficulty
+        let mut difficulty:[u8;1] = [0;1];
+        let result = file.read_exact(&mut difficulty);
+        if result.is_err(){
+            return Err("Error reading diffculty from config");
+        }
+
         return Ok(Chain{db:db,
                 height_reference:references,
                 height:height,
-                genesis_hash:genesis_hash});
+                genesis_hash:genesis_hash,
+                difficulty:difficulty[0]});
     }
 
     pub fn add_block(&mut self,
@@ -183,6 +195,36 @@ impl Chain{
 
         return Ok(block);
 
+    }
+
+    pub fn dump_config(&self, root_path:&str) -> Result<(),&'static str>{
+        let root = String::from(root_path);
+        let path_config = root+CONFIG_FILE;
+
+        let result = File::create(path_config);
+        if result.is_err(){
+            return Err("Could not open config");
+        }
+        let mut file = result.unwrap();
+
+        let result = file.write_all(
+                            &self.height.to_be_bytes());
+        if result.is_err(){
+            return Err("Error writing height");
+        }
+
+        let result = file.write_all(&self.genesis_hash);
+        if result.is_err(){
+            return Err("Error writing genesis block");
+        }
+
+        let result = file.write_all(
+                        &self.difficulty.to_be_bytes());
+        if result.is_err(){
+            return Err("Error writing difficulty");
+        }
+
+        return Ok(())
     }
 
 }
