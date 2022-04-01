@@ -44,6 +44,14 @@ static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
                                 0xaf,0xa7,0x73,0xa6,
                                 0x5c,0x0f,0x01,0x9d,
                                 0x5c,0xbc,0x0a,0x7c];
+static BEGINNING_DIFFICULTY:[u8;32] = [0x7F,0xFF,0xFF,0xFF,
+                                       0xFF,0xFF,0xFF,0xFF,
+                                       0xFF,0xFF,0xFF,0xFF,
+                                       0xFF,0xFF,0xFF,0xFF,
+                                       0xFF,0xFF,0xFF,0xFF,
+                                       0xFF,0xFF,0xFF,0xFF,
+                                       0xFF,0xFF,0xFF,0xFF,
+                                       0xFF,0xFF,0xFF,0xFF];
 // God is dead, noone will stop anarchy
 
 static MAX_TRANSACTIONS_PER_BLOCK:usize = 3000;
@@ -54,7 +62,7 @@ pub struct Chain{
     height_reference: DB::<MultiThreaded>,
     height:u64,
     genesis_hash:[u8;32],
-    difficulty:u8
+    difficulty:[u8;32]
 }
 
 impl Chain{
@@ -107,7 +115,7 @@ impl Chain{
         }
 
         // read difficulty
-        let mut difficulty:[u8;1] = [0;1];
+        let mut difficulty:[u8;32] = [0;32];
         let result = file.read_exact(&mut difficulty);
         if result.is_err(){
             return Err("Error reading diffculty from config");
@@ -117,7 +125,7 @@ impl Chain{
                 height_reference:references,
                 height:height,
                 genesis_hash:genesis_hash,
-                difficulty:difficulty[0]});
+                difficulty:difficulty});
     }
 
     pub fn add_block(&mut self,
@@ -152,7 +160,7 @@ impl Chain{
         return self.height;
     }
 
-    pub fn get_difficulty(&self) -> u8{
+    pub fn get_difficulty(&self) -> [u8;32]{
         return self.difficulty;
     }
 
@@ -221,8 +229,7 @@ impl Chain{
             return Err("Error writing genesis block");
         }
 
-        let result = file.write_all(
-                        &self.difficulty.to_be_bytes());
+        let result = file.write_all(&self.difficulty);
         if result.is_err(){
             return Err("Error writing difficulty");
         }
@@ -259,7 +266,7 @@ impl Chain{
                         height_reference:references,
                         height:0,
                         genesis_hash:*genesis_hash,
-                        difficulty:1});
+                        difficulty:BEGINNING_DIFFICULTY});
     }
 
 }
@@ -270,7 +277,7 @@ pub struct DerivativeChain{
     height:u64,
     global_height:u64,
     genesis_hash:[u8;32],
-    difficulty:u8
+    difficulty:[u8;32]
 }
 
 impl DerivativeChain{
@@ -323,10 +330,10 @@ impl DerivativeChain{
         }
 
         // read difficulty
-        let mut difficulty:[u8;1] = [0;1];
+        let mut difficulty:[u8;32] = [0;32];
         let result = file.read_exact(&mut difficulty);
         if result.is_err(){
-            return Err("Error reading diffculty and from config");
+            return Err("Error reading diffculty from config");
         }
 
         // read global height
@@ -341,7 +348,7 @@ impl DerivativeChain{
                 height_reference:references,
                 height:height,
                 genesis_hash:genesis_hash,
-                difficulty:difficulty[0],
+                difficulty:difficulty,
                 global_height:global_height});
     }
 
@@ -377,7 +384,7 @@ impl DerivativeChain{
         return self.height;
     }
 
-    pub fn get_difficulty(&self) -> u8{
+    pub fn get_difficulty(&self) -> [u8;32]{
         return self.difficulty;
     }
 
@@ -450,8 +457,7 @@ impl DerivativeChain{
             return Err("Error writing genesis block");
         }
 
-        let result = file.write_all(
-                        &self.difficulty.to_be_bytes());
+        let result = file.write_all(&self.difficulty);
         if result.is_err(){
             return Err("Error writing difficulty");
         }
@@ -495,7 +501,7 @@ impl DerivativeChain{
                         height_reference:references,
                         height:0,
                         genesis_hash:*genesis_hash,
-                        difficulty:1,
+                        difficulty:BEGINNING_DIFFICULTY,
                         global_height:global_height});
     }
 
