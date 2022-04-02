@@ -831,5 +831,42 @@ impl BlockChainTree{
         }
     }
 
+    pub fn decrease_funds(&mut self,addr:&[u8;33],funds:BigUint) -> Result<(),&'static str>{
+
+        let result = self.summary_db.get(addr);
+        match result{
+            Ok(None)  => {
+                return Err("Address doesn't have any coins");
+            }
+            Ok(Some(prev)) =>{
+                let res = Tools::load_biguint(&prev);
+                if res.is_err(){
+                    return Err(res.err().unwrap());
+                }
+                let mut previous = res.unwrap().0;
+                if previous<funds{
+                    return Err("Insufficient balance");
+                }
+                previous -= funds;
+
+                let mut dump:Vec<u8> = Vec::with_capacity(Tools::bigint_size(&previous));
+                let res = Tools::dump_biguint(&previous, &mut dump);
+                if res.is_err(){
+                    return Err(res.err().unwrap());
+                }
+
+                let res = self.summary_db.put(addr,&dump);
+                if res.is_err(){
+                    return Err("Error putting funds");
+                }
+
+                return Ok(())    
+            }
+            Err(_) =>{
+                return Err("Error getting data from db");
+            }
+        }
+    }
+
 }
 
