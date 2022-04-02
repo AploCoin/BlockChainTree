@@ -20,6 +20,7 @@ use std::str;
 use std::path::Path;
 use rocksdb::{DBWithThreadMode as DB, Options, MultiThreaded};
 use hex::ToHex;
+use num_traits::Zero;
 
 static BLOCKCHAIN_DIRECTORY:&'static str = "./BlockChainTree/";
 
@@ -861,6 +862,27 @@ impl BlockChainTree{
                 }
 
                 return Ok(())    
+            }
+            Err(_) =>{
+                return Err("Error getting data from db");
+            }
+        }
+    }
+
+    pub fn get_funds(&mut self,addr:&[u8;33]) -> Result<BigUint,&'static str>{
+
+        let result = self.summary_db.get(addr);
+        match result{
+            Ok(None)  => {
+                return Ok(Zero::zero());
+            }
+            Ok(Some(prev)) =>{
+                let res = Tools::load_biguint(&prev);
+                if res.is_err(){
+                    return Err(res.err().unwrap());
+                }
+                let previous = res.unwrap().0;
+                return Ok(previous);  
             }
             Err(_) =>{
                 return Err("Error getting data from db");
