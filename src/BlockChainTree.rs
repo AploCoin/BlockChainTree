@@ -472,7 +472,7 @@ impl DerivativeChain{
         return Ok(())
     }
 
-    pub fn new_without_config(root_path:&str,
+    pub fn without_config(root_path:&str,
                             genesis_hash:&[u8;32],
                             global_height:u64) -> Result<DerivativeChain,&'static str>{
         let root = String::from(root_path);
@@ -672,7 +672,6 @@ impl BlockChainTree{
         return Ok(());
     }
 
-
     pub fn get_derivative_chain(&mut self,addr:&[u8;33]) -> Result<Option<Box<DerivativeChain>>,&'static str>{
         let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr:String = addr.encode_hex::<String>();
@@ -692,6 +691,45 @@ impl BlockChainTree{
         return Ok(None);
     }
 
-    
+    pub fn get_main_chain(&mut self) -> &mut Chain{
+        return &mut self.main_chain;
+    }
+
+    pub fn create_derivative_chain(addr:&[u8;33],
+                                    genesis_hash:&[u8;32],
+                                    global_height:u64) -> Result<DerivativeChain,&'static str>{
+
+        let mut root_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);
+        let hex_addr:String = addr.encode_hex::<String>();
+        root_path += &hex_addr;
+        root_path += "/";
+        let result = fs::create_dir(Path::new(&root_path));
+        if result.is_err(){
+            return Err("Error creating root folder");
+        }
+
+        let blocks_path = root_path.clone()+BLOCKS_FOLDER;
+        let result = fs::create_dir(Path::new(&blocks_path));
+        if result.is_err(){
+            return Err("Error creating blocks folder")
+        }
+
+        let references_path = root_path.clone()+REFERENCES_FOLDER;
+        let result = fs::create_dir(Path::new(&references_path));
+        if result.is_err(){
+            return Err("Error creating references folder");
+        }
+
+        let result = DerivativeChain::without_config(&root_path,
+                                                    genesis_hash,
+                                                    global_height);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+
+        return Ok(result.unwrap());
+        
+    }
+
 }
 
