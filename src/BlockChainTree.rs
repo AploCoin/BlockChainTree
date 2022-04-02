@@ -19,7 +19,7 @@ use std::collections::HashMap;
 use std::str;
 use std::path::Path;
 use rocksdb::{DBWithThreadMode as DB, Options, MultiThreaded};
-
+use hex::ToHex;
 
 static BLOCKCHAIN_DIRECTORY:&'static str = "./BlockChainTree/";
 
@@ -29,7 +29,7 @@ static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
 
 
 static DERIVATIVE_CHAINS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/CHAINS/";
-static DERIVATIVE_DB_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/DB/";
+//static DERIVATIVE_DB_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/DB/";
 
 static BLOCKS_FOLDER:&'static str = "BLOCKS/";
 static REFERENCES_FOLDER:&'static str = "REF/";
@@ -508,12 +508,41 @@ impl DerivativeChain{
 
 }
 
+// pub struct DerChainBufObject{
+//     chain:Box<DerivativeChain>,
+//     references:usize
+// }
+// impl DerChainBufObject{
+//     pub fn new(chain:Box<DerivativeChain>) -> DerChainBufObject{
+//         return DerChainBufObject{chain:chain,
+//                                 references:1};
+//     }
+//     pub fn get_chain(&self) -> Box<DerivativeChain>{
+//         return self.chain.clone();
+//     }
+//     pub fn get_references(&self) -> usize{
+//         return self.references;
+//     }
+//     pub fn add_reference(&mut self){
+//         self.references += 1;
+//     }
+//     pub fn remove_reference(&mut self) -> Result<(),&'static str>{
+//         if self.references == 0{
+//             return Err("Amount of references is 0");
+//         }
+//         self.references -= 1;
+//         return Ok(());
+//     }
+//     pub fn is_referenced(&self) -> bool{
+//         return !(self.references == 0);
+//     }
+// }
+
 
 pub struct BlockChainTree{
     trxs_pool: VecDeque<TransactionToken>,
     summary_db: DB::<MultiThreaded>,
     main_chain:Chain,
-    opened_derivatives:HashMap<[u8;32],(u32,DerivativeChain)>
 
 }
 
@@ -542,12 +571,14 @@ impl BlockChainTree{
         let mut file = result.unwrap();
 
         // read amount of transactions
-        let mut buf:[u8;4] = [0;4];
+        let mut buf:[u8;8] = [0;8];
         let result = file.read_exact(&mut buf);
         if result.is_err(){
             return Err("Error reading amount of transactions");
         }
-        let trxs_amount = u32::from_be_bytes(buf);
+        let trxs_amount = u64::from_be_bytes(buf);
+
+        let mut buf:[u8;4] = [0;4];
 
         // allocate VecDeque
         let mut trxs_pool = VecDeque::<TransactionToken>::with_capacity(trxs_amount as usize);
@@ -577,7 +608,7 @@ impl BlockChainTree{
 
                 let mut tr_wrapped = TransactionToken::new();
                 tr_wrapped.set_transaction(transaction).unwrap();
-                trxs_pool.push_front(tr_wrapped);
+                trxs_pool.push_back(tr_wrapped);
 
             }else{
                 return Err("Not implemented")
@@ -594,8 +625,73 @@ impl BlockChainTree{
 
         return Ok(BlockChainTree{trxs_pool:trxs_pool,
                                 summary_db:summary_db,
-                                main_chain:main_chain,
-                                opened_derivatives:HashMap::new()});
+                                main_chain:main_chain});
     }
+
+    pub fn dump_pool(&self) -> Result<(),&'static str>{
+
+        let pool_path = String::from(BLOCKCHAIN_DIRECTORY)
+                        +TRANSACTIONS_POOL;
+        let pool_path = Path::new(&pool_path);
+
+        // open file
+        let result = File::create(pool_path);
+        if result.is_err(){
+            return Err("Error opening config file");
+        }
+        let mut file = result.unwrap();
+
+        // write transactions amount
+        let result = file.write_all(&(self.trxs_pool.len() as u64).to_be_bytes());
+        if result.is_err(){
+            return Err("Error writing amount of transactions");
+        }
+
+        //write transactions
+        for transaction in self.trxs_pool.iter(){
+            // get dump
+            let result = transaction.dump();
+            if result.is_err(){
+                return Err(result.err().unwrap());
+            }
+            let dump = result.unwrap();
+
+            // write transaction size
+            let result = file.write_all(&(dump.len() as u32).to_be_bytes());
+            if result.is_err(){
+                return Err("Error writing transaction size");
+            }
+
+            // write transaction dump
+            let result = file.write_all(&dump);
+            if result.is_err(){
+                return Err("Error writing transaction dump");
+            }
+        }
+
+        return Ok(());
+    }
+
+
+    pub fn get_derivative_chain(&mut self,addr:&[u8;33]) -> Result<Option<Box<DerivativeChain>>,&'static str>{
+        let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
+        let hex_addr:String = addr.encode_hex::<String>();
+        path_string += &hex_addr;
+
+        let path = Path::new(&path_string);
+        if path.exists(){
+            let result = DerivativeChain::new(&path_string);
+            if result.is_err(){
+                return Err(result.err().unwrap());
+            }
+            let chain = Box::new(result.unwrap());
+
+            return Ok(Some(chain));
+        }
+
+        return Ok(None);
+    }
+
+    
 }
 
