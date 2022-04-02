@@ -726,9 +726,109 @@ impl BlockChainTree{
         if result.is_err(){
             return Err(result.err().unwrap());
         }
+        let chain = result.unwrap();
 
-        return Ok(result.unwrap());
+        let result = chain.dump_config(&root_path);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+
+        return Ok(chain);
         
+    }
+
+    pub fn check_main_folders() -> Result<(),&'static str>{
+
+        let root = Path::new(BLOCKCHAIN_DIRECTORY);
+        if !root.exists(){
+            let result = fs::create_dir(root);
+            if result.is_err(){
+                return Err("Error creating blockchain root");
+            }
+        }
+
+        let main_path = Path::new(MAIN_CHAIN_DIRECTORY);
+        if !main_path.exists(){
+            let result = fs::create_dir(main_path);
+            if result.is_err(){
+                return Err("Error creating main chain folder");
+            }
+        }
+
+        let summary_path = Path::new(AMMOUNT_SUMMARY);
+        if !summary_path.exists(){
+            let result = fs::create_dir(summary_path);
+            if result.is_err(){
+                return Err("Error creating summary folder");
+            }
+        }
+
+        let blocks_path = String::from(MAIN_CHAIN_DIRECTORY)
+                            +BLOCKS_FOLDER;
+        let blocks_path = Path::new(&blocks_path);
+        if !blocks_path.exists(){
+            let result = fs::create_dir(blocks_path);
+            if result.is_err(){
+                return Err("Error creating blocks path");
+            }
+        }
+
+        let references_path = String::from(MAIN_CHAIN_DIRECTORY)
+                            +REFERENCES_FOLDER;
+        let references_path = Path::new(&references_path);
+        if !references_path.exists(){
+            let result = fs::create_dir(references_path);
+            if result.is_err(){
+                return Err("Error creating references path");
+            } 
+        }
+
+        
+        return Ok(());
+    }
+
+    pub fn add_funds(&mut self,addr:&[u8;33],funds:BigUint) -> Result<(),&'static str>{
+
+        let result = self.summary_db.get(addr);
+        match result{
+            Ok(None)  => {
+                let mut dump:Vec<u8> = Vec::with_capacity(Tools::bigint_size(&funds));
+                let res = Tools::dump_biguint(&funds, &mut dump);
+                if res.is_err(){
+                    return Err(res.err().unwrap());
+                }
+
+                let res = self.summary_db.put(addr,&dump);
+                if res.is_err(){
+                    return Err("Error putting funds");
+                }
+                return Ok(())
+            }
+            Ok(Some(prev)) =>{
+                let res = Tools::load_biguint(&prev);
+                if res.is_err(){
+                    return Err(res.err().unwrap());
+                }
+                let mut previous = res.unwrap().0;
+                previous += funds;
+
+                let mut dump:Vec<u8> = Vec::with_capacity(Tools::bigint_size(&previous));
+                let res = Tools::dump_biguint(&previous, &mut dump);
+                if res.is_err(){
+                    return Err(res.err().unwrap());
+                }
+
+                let res = self.summary_db.put(addr,&dump);
+                if res.is_err(){
+                    return Err("Error putting funds");
+                }
+
+                return Ok(())    
+            }
+            Err(_) =>{
+                return Err("Error getting data from db");
+            }
+        }
     }
 
 }
