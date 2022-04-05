@@ -626,6 +626,21 @@ impl SummarizeBlock{
         return Ok(Tools::hash(&dump));
     }
 
+}
 
+
+pub struct SumTransactionBlock{
+    transaction_block: Option<TransactionBlock>,
+    summarize_block: Option<SummarizeBlock>
+}
+
+impl SumTransactionBlock{
+    pub fn new(transaction_block:Option<TransactionBlock>,
+                summarize_block:Option<SummarizeBlock>)
+                ->SumTransactionBlock{
+                                       
+        return SumTransactionBlock{transaction_block:transaction_block,
+                                summarize_block:summarize_block};
+    }
 }
 
