@@ -3,7 +3,7 @@ use sha2::{Sha256, Digest};
 use std::convert::TryInto;
 use crate::Tools;
 use crate::merkletree::MerkleTree;
-use crate::Transaction;
+use crate::Transaction::Transaction;
 use crate::Token;
 use base64;
 use byteorder::{BigEndian, ReadBytesExt};
@@ -21,7 +21,7 @@ macro_rules! bytes_to_u64  {
 static ALREADY_SET:&str = "data is already set";
 
 pub struct BasicInfo{
-    miner:[u8;33],
+    //miner:[u8;33],
     timestamp:u64,
     PoW:BigUint,
     previous_hash:[u8;32],
@@ -31,13 +31,13 @@ pub struct BasicInfo{
 
 
 impl BasicInfo{
-    pub fn new(miner:[u8;33],
+    pub fn new(//miner:[u8;33],
                 timestamp:u64,
                 PoW:BigUint,
                 previous_hash:[u8;32],
                 height:u64,
                 difficulty:[u8;32]) -> BasicInfo{
-        return BasicInfo{miner:miner,
+        return BasicInfo{//miner:miner,
                         timestamp:timestamp,
                         PoW:PoW,
                         previous_hash:previous_hash,
@@ -46,8 +46,7 @@ impl BasicInfo{
     }
 
     pub fn get_dump_size(&self) -> usize{
-        let to_return = 33
-                    + 8
+        let to_return = 8
                     + Tools::bigint_size(&self.PoW)
                     + 32
                     + 8
@@ -56,10 +55,10 @@ impl BasicInfo{
     }
     pub fn dump(&self,buffer:&mut Vec<u8>) -> Result<(),&'static str>{
 
-        // dumping miner
-        for byte in self.miner.iter(){
-            buffer.push(*byte);
-        }
+        // // dumping miner
+        // for byte in self.miner.iter(){
+        //     buffer.push(*byte);
+        // }
 
         // dumping timestamp
         for byte in self.timestamp.to_be_bytes().iter(){
@@ -91,13 +90,13 @@ impl BasicInfo{
     pub fn parse(data:&[u8]) -> Result<BasicInfo,&'static str>{
         let mut index:usize = 0;
 
-        if data.len() <= 113{
+        if data.len() <= 80{
             return Err("Not enough data to parse");
         }
         
         // parsing miner
-        let miner:[u8;33] = unsafe{transmute_copy(&data[index])};
-        index += 33;
+        // let miner:[u8;33] = unsafe{transmute_copy(&data[index])};
+        // index += 33;
 
         // parsing timestamp
         let timestamp = bytes_to_u64!(data,index);
@@ -126,7 +125,7 @@ impl BasicInfo{
             Ok(a) => {PoW = a.0;}
         }
 
-        return Ok(BasicInfo{miner:miner,
+        return Ok(BasicInfo{//miner:miner,
                         timestamp:timestamp,
                         PoW:PoW,
                         previous_hash:previous_hash,
@@ -136,7 +135,7 @@ impl BasicInfo{
 }
 
 pub struct TransactionToken{
-    transaction:Option<Transaction::Transaction>,
+    transaction:Option<Transaction>,
     token:Option<Token::TokenAction>
 }
 impl TransactionToken{
@@ -155,7 +154,8 @@ impl TransactionToken{
         return !self.token.is_none();
     }
 
-    pub fn set_transaction(&mut self, transaction:Transaction::Transaction) 
+    pub fn set_transaction(&mut self, 
+                            transaction:Transaction) 
                             -> Result<(),&'static str>{
         if !self.is_empty(){
             return Err(ALREADY_SET);
@@ -176,7 +176,7 @@ impl TransactionToken{
         return Ok(());
     }
 
-    pub fn get_transaction(&self) -> &Option<Transaction::Transaction>{
+    pub fn get_transaction(&self) -> &Option<Transaction>{
         return &self.transaction;
     }
     pub fn get_token(&self) -> &Option<Token::TokenAction>{
@@ -368,7 +368,7 @@ impl TransactionBlock{
 
             if trtk_type == 0{
                 // if transaction
-                let result = Transaction::Transaction::parse_transaction(
+                let result = Transaction::parse_transaction(
                     &data[offset..offset+(transaction_size as usize)],transaction_size as u64);
                 if result.is_err(){
                     return Err("Error parsing token");
@@ -410,12 +410,28 @@ impl TransactionBlock{
         return Ok(transaction_block);
 
     }
+
     pub fn get_hash(&self) -> Result<[u8;32],&'static str>{
-        let result = self.dump();
+        let dump_size = 32
+                        +self.default_info.get_dump_size()
+                        +Tools::bigint_size(&self.fee);
+        let mut dump:Vec<u8> = Vec::with_capacity(dump_size);
+
+        // merkle tree root
+        dump.extend(self.merkle_tree_root.iter());
+
+        // default info
+        let result = self.default_info.dump(&mut dump);
         if result.is_err(){
             return Err(result.err().unwrap());
         }
-        let dump = result.unwrap();
+
+        // fee
+        let result = Tools::dump_biguint(&self.fee, 
+                                        &mut dump);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
 
         return Ok(Tools::hash(&dump));
     }
@@ -425,13 +441,13 @@ impl TransactionBlock{
 pub struct TokenBlock{
     default_info:BasicInfo,
     token_signature:String,
-    payment_transaction:Transaction::Transaction
+    payment_transaction:Transaction
 }
 
 impl TokenBlock{
     pub fn new(default_info:BasicInfo,
                 token_signature:String,
-                payment_transaction:Transaction::Transaction) -> TokenBlock{
+                payment_transaction:Transaction) -> TokenBlock{
 
         return TokenBlock{default_info:default_info,
                         token_signature:token_signature,
@@ -450,6 +466,7 @@ impl TokenBlock{
         
         let mut dump:Vec<u8> = Vec::with_capacity(dump_size);
 
+        // header
         dump.push(3);
 
         for byte in self.token_signature.as_bytes().iter(){
@@ -489,7 +506,7 @@ impl TokenBlock{
 
         let transaction_size:u32 = u32::from_be_bytes(data[offset..offset+4].try_into().unwrap());
         offset += 4;
-        let result = Transaction::Transaction::parse_transaction(&data[offset..offset+transaction_size as usize], transaction_size as u64);
+        let result = Transaction::parse_transaction(&data[offset..offset+transaction_size as usize], transaction_size as u64);
         if result.is_err(){
             return Err("Parsing transaction error");
         }
@@ -514,5 +531,101 @@ impl TokenBlock{
                             token_signature:token_signature,
                             payment_transaction:transaction});
     }
+}
+
+
+
+pub struct SummarizeBlock{
+    default_info:BasicInfo,
+    founder_transaction:Transaction
+
+}
+
+impl SummarizeBlock{
+    pub fn new(default_info:BasicInfo,
+                founder_transaction:Transaction) -> SummarizeBlock{
+
+        return SummarizeBlock{default_info:default_info,
+                    founder_transaction:founder_transaction};
+    }
+
+    pub fn get_dump_size(&self) -> usize{
+        return 1 // header
+                +self.default_info.get_dump_size()
+                +self.founder_transaction.get_dump_size();
+    }
+    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+
+        let mut to_return:Vec<u8> = Vec::with_capacity(self.get_dump_size());
+
+        // header
+        to_return.push(4);
+
+        // dump transaction
+        let result = self.founder_transaction.dump();
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let mut transaction_dump = result.unwrap();
+        to_return.extend((transaction_dump.len() as u64).to_be_bytes());
+        to_return.append(&mut transaction_dump);
+
+        // dump basic info
+        let result = self.default_info.dump(&mut to_return);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+
+        return Ok(to_return);
+    }
+
+    pub fn parse(data:&[u8]) -> Result<SummarizeBlock,&'static str>{
+        if data.len() <= 8{
+            return Err("Not enough data");
+        }
+        let mut offset:usize = 0;
+        
+        // parse transaction
+        let transaction_size:usize = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize;
+        offset += 8;
+        if data.len()<transaction_size+8{
+            return Err("Error while parsing transaction");
+        }
+        let result = Transaction::parse_transaction(&data[offset..offset+transaction_size], transaction_size as u64);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let transaction = result.unwrap();
+        offset += transaction_size;
+
+        // parse default info
+        let result = BasicInfo::parse(&data[offset..]);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let default_info = result.unwrap();
+
+        return Ok(SummarizeBlock{default_info:default_info,
+                        founder_transaction:transaction});
+
+    }
+
+    pub fn hash(&self) -> Result<[u8;32],&'static str>{
+        let dump_size = self.default_info.get_dump_size()
+                        +32;
+        let mut dump:Vec<u8> = Vec::with_capacity(dump_size); 
+    
+        let result = self.default_info.dump(&mut dump);
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+
+        let tr_hash = self.founder_transaction.hash(&self.default_info.previous_hash);
+        dump.extend(tr_hash.iter());
+
+        return Ok(Tools::hash(&dump));
+    }
+
+
 }
 
