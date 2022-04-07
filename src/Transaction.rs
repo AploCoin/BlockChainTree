@@ -215,4 +215,25 @@ impl Transaction{
 
         return Ok(transaction);
     }
+
+    pub fn get_sender(&self) -> &[u8;33]{
+        return &self.sender;
+    }
+    
+    pub fn get_receiver(&self) -> &[u8;33]{
+        return &self.receiver;
+    }
+
+    pub fn get_timestamp(&self) -> u64{
+        return self.timestamp;
+    }
+
+    pub fn get_signature(&self) -> &[u8;64]{
+        return &self.signature;
+    }
+
+    pub fn get_amount(&self) -> &BigUint{
+        return &self.amount;
+    }
+
 }

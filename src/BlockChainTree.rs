@@ -62,6 +62,7 @@ static BEGINNING_DIFFICULTY:[u8;32] = [0x7F,0xFF,0xFF,0xFF,
 // God is dead, noone will stop anarchy
 
 static MAX_TRANSACTIONS_PER_BLOCK:usize = 3000;
+static BLOCKS_PER_ITERATION:usize = 12960;
 
 
 pub struct Chain{
@@ -776,13 +777,13 @@ impl BlockChainTree{
         return Ok(());
     }
 
-    pub fn add_funds(&mut self,addr:&[u8;33],funds:BigUint) -> Result<(),&'static str>{
+    pub fn add_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(),&'static str>{
 
         let result = self.summary_db.get(addr);
         match result{
             Ok(None)  => {
                 let mut dump:Vec<u8> = Vec::with_capacity(Tools::bigint_size(&funds));
-                let res = Tools::dump_biguint(&funds, &mut dump);
+                let res = Tools::dump_biguint(funds, &mut dump);
                 if res.is_err(){
                     return Err(res.err().unwrap());
                 }
@@ -820,7 +821,7 @@ impl BlockChainTree{
         }
     }
 
-    pub fn decrease_funds(&mut self,addr:&[u8;33],funds:BigUint) -> Result<(),&'static str>{
+    pub fn decrease_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(),&'static str>{
 
         let result = self.summary_db.get(addr);
         match result{
@@ -833,7 +834,7 @@ impl BlockChainTree{
                     return Err(res.err().unwrap());
                 }
                 let mut previous = res.unwrap().0;
-                if previous<funds{
+                if previous < *funds{
                     return Err("Insufficient balance");
                 }
                 previous -= funds;
@@ -878,6 +879,35 @@ impl BlockChainTree{
         }
     }
 
+    pub fn new_transaction(&mut self,tr:TransactionToken) -> Result<(),&'static str>{
+        if tr.is_transaction(){
+            let transaction = tr.get_transaction().as_ref().unwrap();
+            
+            // if it is in first bunch of transactions
+            // to be added to blockchain.
+            // AND if it is not a last block 
+            // that is pending.
+            if self.trxs_pool.len() < MAX_TRANSACTIONS_PER_BLOCK
+                && self.main_chain.get_height() as usize+1%BLOCKS_PER_ITERATION!=0{
+                
+                let result = self.decrease_funds(transaction.get_sender(),
+                                        transaction.get_amount());
+                if result.is_err(){
+                    return Err(result.err().unwrap());
+                }
+
+                let result = self.add_funds(transaction.get_sender(),
+                                    transaction.get_amount());
+                if result.is_err(){
+                    return Err(result.err().unwrap());
+                }                   
+            }
+            self.trxs_pool.push_front(tr);
+
+            return Ok(());
+        }
+        return Err("Not implemented");
+    }
 
 }
 
