@@ -9,6 +9,7 @@ use base64;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::mem::transmute;
 use std::mem::transmute_copy;
+use crate::DumpHeaders::Headers;
 
 
 #[macro_export]
@@ -284,7 +285,7 @@ impl TransactionBlock{
         let mut to_return:Vec<u8> = Vec::with_capacity(size);
 
         //header
-        to_return.push(2);
+        to_return.push(Headers::TransactionBlock as u8);
 
         // merkle tree root
         to_return.extend(self.merkle_tree_root.iter());
@@ -467,7 +468,7 @@ impl TokenBlock{
         let mut dump:Vec<u8> = Vec::with_capacity(dump_size);
 
         // header
-        dump.push(3);
+        dump.push(Headers::TokenBlock as u8);
 
         for byte in self.token_signature.as_bytes().iter(){
             dump.push(*byte);
@@ -559,7 +560,7 @@ impl SummarizeBlock{
         let mut to_return:Vec<u8> = Vec::with_capacity(self.get_dump_size());
 
         // header
-        to_return.push(4);
+        to_return.push(Headers::SummarizeBlock as u8);
 
         // dump transaction
         let result = self.founder_transaction.dump();

@@ -13,6 +13,7 @@ use sha2::{Sha256, Digest};
 use std::convert::TryInto;
 use num_bigint::{ToBigUint};
 mod BlockChainTree;
+mod DumpHeaders;
 
 
 

@@ -8,6 +8,7 @@ use secp256k1::{Secp256k1, Message};
 use secp256k1::PublicKey;
 use secp256k1::ecdsa::Signature;
 use secp256k1::hashes::sha256;
+use crate::DumpHeaders::Headers;
 
 #[derive(Debug)]
 pub struct Transaction{
@@ -128,7 +129,7 @@ impl Transaction{
         let mut transaction_dump:Vec<u8> = Vec::with_capacity(calculated_size);
         
         // header
-        transaction_dump.push(0);
+        transaction_dump.push(Headers::Transaction as u8);
 
         // sender
         for byte in self.sender.iter(){

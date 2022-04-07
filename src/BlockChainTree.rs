@@ -5,7 +5,10 @@ use std::convert::TryInto;
 use crate::Tools;
 use crate::Transaction::Transaction;
 use crate::Token;
-use crate::Block::{TransactionBlock, TokenBlock, TransactionToken};
+use crate::Block::{TransactionBlock, 
+                    TokenBlock, 
+                    TransactionToken,
+                    SumTransactionBlock};
 use std::mem::transmute_copy;
 use std::collections::VecDeque;
 
@@ -21,6 +24,7 @@ use std::path::Path;
 use rocksdb::{DBWithThreadMode as DB, Options, MultiThreaded};
 use hex::ToHex;
 use num_traits::Zero;
+use crate::DumpHeaders::Headers;
 
 static BLOCKCHAIN_DIRECTORY:&'static str = "./BlockChainTree/";
 
@@ -131,7 +135,7 @@ impl Chain{
     }
 
     pub fn add_block(&mut self,
-                    block:&TransactionBlock) -> Result<(),&'static str>{
+                    block:&SumTransactionBlock) -> Result<(),&'static str>{
 
         let result = block.dump();
         if result.is_err(){
@@ -407,6 +411,7 @@ impl DerivativeChain{
             return Ok(None);
         }
         let dump = result.unwrap();
+
 
         let result = TokenBlock::parse(&dump,dump.len() as u32);
         if result.is_err(){
