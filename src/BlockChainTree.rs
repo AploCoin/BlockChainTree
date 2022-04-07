@@ -8,7 +8,8 @@ use crate::Token;
 use crate::Block::{TransactionBlock, 
                     TokenBlock, 
                     TransactionToken,
-                    SumTransactionBlock};
+                    SumTransactionBlock,
+                    SummarizeBlock};
 use std::mem::transmute_copy;
 use std::collections::VecDeque;
 
@@ -170,7 +171,7 @@ impl Chain{
         return self.difficulty;
     }
 
-    pub fn find_by_height(&self,height:u64) -> Result<Option<TransactionBlock>,&'static str>{
+    pub fn find_by_height(&self,height:u64) -> Result<Option<SumTransactionBlock>,&'static str>{
         if height > self.height{
             return Ok(None);
         }
@@ -184,16 +185,30 @@ impl Chain{
         }
         let dump = result.unwrap();
 
-        let result = TransactionBlock::parse(&dump,dump.len() as u32);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        let block = result.unwrap();
-        return Ok(Some(block));
+        if dump[0] == Headers::TransactionBlock as u8{
+            let result = TransactionBlock::parse(&dump[1..],
+                                        (dump.len()-1) as u32);
+            if result.is_err(){
+                return Err(result.err().unwrap());
+            }
+            let block = SumTransactionBlock::new(Some(result.unwrap()),
+                                                None);
 
+            return Ok(Some(block));
+        }else if dump[0] == Headers::SummarizeBlock as u8{
+            let result = SummarizeBlock::parse(&dump[1..]);
+            if result.is_err(){
+                return Err(result.err().unwrap());
+            }
+            let block = SumTransactionBlock::new(None,
+                                    Some(result.unwrap()));
+            return Ok(Some(block));
+        }
+
+        return Err("Block type not found");
     }
 
-    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<TransactionBlock>,&'static str>{
+    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<SumTransactionBlock>,&'static str>{
         let result = self.height_reference.get(hash);
         if result.is_err(){
             return Err("Error getting height");
@@ -411,7 +426,6 @@ impl DerivativeChain{
             return Ok(None);
         }
         let dump = result.unwrap();
-
 
         let result = TokenBlock::parse(&dump,dump.len() as u32);
         if result.is_err(){
