@@ -509,37 +509,6 @@ impl DerivativeChain{
 
 }
 
-// pub struct DerChainBufObject{
-//     chain:Box<DerivativeChain>,
-//     references:usize
-// }
-// impl DerChainBufObject{
-//     pub fn new(chain:Box<DerivativeChain>) -> DerChainBufObject{
-//         return DerChainBufObject{chain:chain,
-//                                 references:1};
-//     }
-//     pub fn get_chain(&self) -> Box<DerivativeChain>{
-//         return self.chain.clone();
-//     }
-//     pub fn get_references(&self) -> usize{
-//         return self.references;
-//     }
-//     pub fn add_reference(&mut self){
-//         self.references += 1;
-//     }
-//     pub fn remove_reference(&mut self) -> Result<(),&'static str>{
-//         if self.references == 0{
-//             return Err("Amount of references is 0");
-//         }
-//         self.references -= 1;
-//         return Ok(());
-//     }
-//     pub fn is_referenced(&self) -> bool{
-//         return !(self.references == 0);
-//     }
-// }
-
-
 pub struct BlockChainTree{
     trxs_pool: VecDeque<TransactionToken>,
     summary_db: DB::<MultiThreaded>,

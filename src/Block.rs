@@ -411,7 +411,7 @@ impl TransactionBlock{
 
     }
 
-    pub fn get_hash(&self) -> Result<[u8;32],&'static str>{
+    pub fn hash(&self) -> Result<[u8;32],&'static str>{
         let dump_size = 32
                         +self.default_info.get_dump_size()
                         +Tools::bigint_size(&self.fee);
@@ -641,6 +641,41 @@ impl SumTransactionBlock{
                                        
         return SumTransactionBlock{transaction_block:transaction_block,
                                 summarize_block:summarize_block};
+    }
+    
+    pub fn is_empty(&self) -> bool{
+        return self.summarize_block.is_none() && 
+                self.transaction_block.is_none();
+    }
+
+    pub fn is_transaction_block(&self) -> bool{
+        return self.transaction_block.is_none();
+    }
+    pub fn is_summarize_block(&self) -> bool{
+        return self.summarize_block.is_none();
+    }
+    pub fn get_hash(&self) -> Result<[u8;32],&'static str>{
+        if self.is_transaction_block(){
+            return self.transaction_block.as_ref().unwrap().hash();
+        }else{
+            return self.summarize_block.as_ref().unwrap().hash();
+        }
+    }
+
+    pub fn get_dump_size(&self) -> usize{
+        if self.is_transaction_block(){
+            return self.transaction_block.as_ref().unwrap().get_dump_size();
+        }else{
+            return self.summarize_block.as_ref().unwrap().get_dump_size();
+        }
+    }
+
+    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+        if self.is_transaction_block(){
+            return self.transaction_block.as_ref().unwrap().dump();
+        }else{
+            return self.summarize_block.as_ref().unwrap().dump();
+        }
     }
 }
 
