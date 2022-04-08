@@ -541,6 +541,7 @@ impl DerivativeChain{
 pub struct BlockChainTree{
     trxs_pool: VecDeque<TransactionToken>,
     summary_db: DB::<MultiThreaded>,
+    old_summary_db: DB::<MultiThreaded>,
     main_chain:Chain,
 
 }
@@ -557,6 +558,15 @@ impl BlockChainTree{
             return Err("Error opening summary db");
         }
         let summary_db = result.unwrap();
+
+        let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
+        // open old summary db
+        let result = DB::<MultiThreaded>::open_default(
+                                    old_summary_db_path);
+        if result.is_err(){
+            return Err("Error opening old summary db");
+        }
+        let old_summary_db = result.unwrap();
 
         // read transactions pool
         let pool_path = String::from(BLOCKCHAIN_DIRECTORY)
@@ -624,7 +634,8 @@ impl BlockChainTree{
 
         return Ok(BlockChainTree{trxs_pool:trxs_pool,
                                 summary_db:summary_db,
-                                main_chain:main_chain});
+                                main_chain:main_chain,
+                                old_summary_db:old_summary_db});
     }
 
     pub fn dump_pool(&self) -> Result<(),&'static str>{
