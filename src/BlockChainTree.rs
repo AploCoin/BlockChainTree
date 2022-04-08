@@ -902,7 +902,27 @@ impl BlockChainTree{
                 return Ok(previous);  
             }
             Err(_) =>{
-                return Err("Error getting data from db");
+                return Err("Error getting data from summary db");
+            }
+        }
+    }
+
+    pub fn get_old_funds(&mut self,addr:&[u8;33]) -> Result<BigUint,&'static str>{
+        let result = self.old_summary_db.get(addr);
+        match result{
+            Ok(None)  => {
+                return Ok(Zero::zero());
+            }
+            Ok(Some(prev)) =>{
+                let res = Tools::load_biguint(&prev);
+                if res.is_err(){
+                    return Err(res.err().unwrap());
+                }
+                let previous = res.unwrap().0;
+                return Ok(previous);  
+            }
+            Err(_) =>{
+                return Err("Error getting data from old summary db");
             }
         }
     }
