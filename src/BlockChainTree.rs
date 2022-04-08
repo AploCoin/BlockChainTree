@@ -805,6 +805,8 @@ impl BlockChainTree{
         return Ok(());
     }
 
+    // summary data bases functions
+
     pub fn add_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(),&'static str>{
 
         let result = self.summary_db.get(addr);
@@ -925,6 +927,51 @@ impl BlockChainTree{
                 return Err("Error getting data from old summary db");
             }
         }
+    }
+
+    pub fn move_summary_database(&mut self) -> Result<(),&'static str>{
+        let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
+        let sum_path = Path::new(AMMOUNT_SUMMARY);
+        
+        let result = DB::<MultiThreaded>::destroy(&Options::default(), 
+                                    old_sum_path);
+        if result.is_err(){
+            return Err("Error removing previous database");
+        }
+        
+        drop(&self.old_summary_db);
+        drop(&self.summary_db);
+
+        let result = fs::remove_dir_all(old_sum_path);
+        if result.is_err(){
+            return Err("Error deleting folder of an old database");
+        }
+
+        let result = fs::rename(sum_path,old_sum_path);
+        if result.is_err(){
+            return Err("Error renaming folder for summary db");
+        }
+
+        let result = fs::create_dir(sum_path);
+        if result.is_err(){
+            return Err("Error creating folder for an old summarize db");
+        }
+
+        let result = DB::<MultiThreaded>::open_default(
+                                        sum_path);
+        if result.is_err(){
+            return Err("Error opening summarize db");
+        }
+        self.summary_db = result.unwrap();
+
+        let result = DB::<MultiThreaded>::open_default(
+                                        old_sum_path);
+        if result.is_err(){
+            return Err("Error opening old summarize db");
+        }
+        self.old_summary_db = result.unwrap();
+
+        return Ok(());
     }
 
     pub fn new_transaction(&mut self,tr:TransactionToken) -> Result<(),&'static str>{
