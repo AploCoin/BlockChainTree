@@ -30,6 +30,7 @@ use crate::DumpHeaders::Headers;
 static BLOCKCHAIN_DIRECTORY:&'static str = "./BlockChainTree/";
 
 static AMMOUNT_SUMMARY:&'static str = "./BlockChainTree/SUMMARY/";
+static OLD_AMMOUNT_SUMMARY:&'static str = "./BlockChainTree/SUMMARYOLD/";
 
 static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
 
@@ -291,6 +292,10 @@ impl Chain{
                         difficulty:BEGINNING_DIFFICULTY});
     }
 
+    pub fn get_last_block(&self) -> Result<Option<SumTransactionBlock>,&'static str>{
+        return self.find_by_height(self.height-1);
+    }
+
 }
 
 pub struct DerivativeChain{
@@ -527,6 +532,10 @@ impl DerivativeChain{
                         global_height:global_height});
     }
 
+    pub fn get_last_block(&self) -> Result<Option<TokenBlock>,&'static str>{
+        return self.find_by_height(self.height-1);
+    }
+
 }
 
 pub struct BlockChainTree{
@@ -753,6 +762,14 @@ impl BlockChainTree{
             }
         }
 
+        let old_summary_path = Path::new(OLD_AMMOUNT_SUMMARY);
+        if !old_summary_path.exists(){
+            let result = fs::create_dir(old_summary_path);
+            if result.is_err(){
+                return Err("Error creating old summary folder");
+            }
+        }
+
         let blocks_path = String::from(MAIN_CHAIN_DIRECTORY)
                             +BLOCKS_FOLDER;
         let blocks_path = Path::new(&blocks_path);
@@ -908,6 +925,8 @@ impl BlockChainTree{
         }
         return Err("Not implemented");
     }
+
+
 
 }
 
