@@ -12,3 +12,4 @@ Cargo.lock
 dump_test.txt
 
 /.vscode
+/BlockChainTree/

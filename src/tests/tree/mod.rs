@@ -3,35 +3,91 @@ use num_traits::FromPrimitive;
 
 use crate::{BlockChainTree::*, Block::{self, TransactionBlock, TransactionToken, BasicInfo}, Transaction};
 
+static sender:&[u8;33] = b"123456789012345678901234567890123";
+static reciever:&[u8;33] = b"123456789012345678901234567890123";
+static signature:&[u8;64] = b"1234567890123456789012345678901234567890123456789012345678901234";
+
 #[test]
 fn create_chain() {
-    check_main_folders();
+    BlockChainTree::check_main_folders().unwrap();
 
-    let chain = Chain::new("test_chain");
-    chain.unwrap();
-    //assert!(chain.is_ok()); 
+    let mut blockchaintree = BlockChainTree::without_config().unwrap();
+
+    let main_chain = blockchaintree.get_main_chain();
 }
 
 #[test]
-fn add_block() {
-    let chain = Chain::new("test_chain");
-    assert!(chain.is_ok());
-    let mut chain = chain.unwrap();
+fn dump_main_chain_config(){
+    BlockChainTree::check_main_folders().unwrap();
+    let mut blockchaintree = BlockChainTree::without_config().unwrap();
+    blockchaintree.dump_pool();
 
-    let txs = vec![
-        TransactionToken::new(),
-        TransactionToken::new(),
-        TransactionToken::new(),                
-    ];
-    let fee = 1337u32.to_biguint().unwrap();
-    let basic_info = BasicInfo::new(
-        1650454369, BigUint::from_u64(4578475463736).unwrap(),
-        *b"23wdwebr467fdshvft37ibwvefnauuj9", 46352344875u64, *b"23wdwebr467fdshvft3773428f9853j9");
-    let block = TransactionBlock::new(txs, fee, basic_info, *b"23wdwebr467fdshvft37ibwvefnauuj9");
+    blockchaintree.get_main_chain().dump_config().unwrap();
 
-    let block = Block::SumTransactionBlock::new(Some(block), None);
-    assert!(chain.add_block(&block).is_ok());
+    drop(blockchaintree);
 
-    assert_eq!(46352344876u64, chain.get_height());
-    assert_eq!(chain.get_difficulty(), *b"23wdwebr467fdshvft3773428f9853j9");
+    let mut blockchaintree = BlockChainTree::with_config().unwrap();
 }
+
+#[test]
+fn add_funds(){
+    BlockChainTree::check_main_folders().unwrap();
+    let mut blockchaintree = BlockChainTree::without_config().unwrap();
+
+    blockchaintree.add_funds(sender,&(1000u64.to_biguint().unwrap())).unwrap();
+
+    let funds = blockchaintree.get_funds(sender).unwrap();
+    assert_eq!(funds,1000u64.to_biguint().unwrap());
+}
+
+#[test]
+fn decrease_funds(){
+    BlockChainTree::check_main_folders().unwrap();
+    let mut blockchaintree = BlockChainTree::without_config().unwrap();
+
+    let current_funds = blockchaintree.get_funds(sender).unwrap(); 
+
+    let result = blockchaintree.decrease_funds(sender,&(5u64.to_biguint().unwrap()));
+
+    if result.is_ok() && current_funds < 5u64.to_biguint().unwrap(){
+        assert_eq!(false,true);
+    }
+
+    let funds = blockchaintree.get_funds(sender).unwrap();
+    assert_eq!(funds,current_funds-5u64.to_biguint().unwrap());
+}
+
+#[test]
+fn dump_empty_pool(){
+    BlockChainTree::check_main_folders().unwrap();
+    let mut blockchaintree = BlockChainTree::without_config().unwrap();
+    blockchaintree.dump_pool().unwrap();
+
+    blockchaintree.get_main_chain().dump_config();
+
+    drop(blockchaintree);
+
+    let mut blockchaintree = BlockChainTree::with_config().unwrap();
+    assert_eq!(blockchaintree.get_pool().len(),0);
+
+    // for i in 0..10{
+    //     let mut tr = Transaction::Transaction::new(sender,reciever,228,signature,228u64.to_biguint().unwrap());
+    //     let mut tr_tk = TransactionToken::new();
+    //     tr_tk.set_transaction(tr);
+    //     blockchaintree.new_transaction(tr_tk).unwrap();
+    // }
+
+    // blockchaintree.dump_pool().unwrap();
+    // blockchaintree.get_main_chain().dump_config();
+
+    // drop(blockchaintree);
+
+    // let mut blockchaintree = BlockChainTree::with_config().unwrap();
+    // assert_eq!(blockchaintree.get_pool().len(),10);
+
+    // for tr_tk in blockchaintree.get_pool().iter(){
+    //     assert_eq!(tr_tk.get_transaction().as_ref().unwrap().get_sender(),sender);
+    //     assert_eq!(tr_tk.get_transaction().as_ref().unwrap().get_receiver(),reciever);
+    // }
+}
+

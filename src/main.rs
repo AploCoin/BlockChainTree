@@ -15,6 +15,8 @@ use num_bigint::{ToBigUint};
 mod BlockChainTree;
 mod DumpHeaders;
 
+mod tests;
+
 
 
 
@@ -24,34 +26,17 @@ static PREVIOUS_HASH:[u8;32] = [1,1,1,1,1,1,1,1,
                             1,1,1,1,1,1,1,1];
 
 fn main() {
-    // let sender = b"123456789012345678901234567890123";
-    // let reciever = b"123456789012345678901234567890123";
-    // let signature = b"1234567890123456789012345678901234567890123456789012345678901234";
+    let sender = b"123456789012345678901234567890123";
+    let reciever = b"123456789012345678901234567890123";
+    let signature = b"1234567890123456789012345678901234567890123456789012345678901234";
     
     
     
-    // let transaction = Transaction::Transaction::new(sender,
-    //                                             reciever,
-    //                                             228,
-    //                                             signature,
-    //                                             1337u32.to_biguint().unwrap());
+    BlockChainTree::BlockChainTree::check_main_folders().unwrap();
 
-    // println!("{:?}",transaction);
+    let mut blockchaintree = BlockChainTree::BlockChainTree::without_config().unwrap();
 
-    // let transaction_dump = transaction.dump().unwrap();
+    let mut main_chain = blockchaintree.get_main_chain();
 
-    // println!("{}",transaction_dump.len());
-
-    // let parsed_transaction = Transaction::Transaction::parse_transaction(&transaction_dump[1..], transaction_dump.len() as u64-1).unwrap();
-
-    // println!("{:?}",parsed_transaction);
-
-
-}
-
-mod tests;
-
-#[cfg(test)]
-mod BlockchainTreeTests {
-    use super::tests::*;
+    
 }

@@ -35,7 +35,8 @@ static OLD_AMMOUNT_SUMMARY:&'static str = "./BlockChainTree/SUMMARYOLD/";
 static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
 
 
-static DERIVATIVE_CHAINS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/CHAINS/";
+static DERIVATIVE_CHAINS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVES/";
+static CHAINS_FOLDER:&'static str = "CHAINS/";
 //static DERIVATIVE_DB_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/DB/";
 
 static BLOCKS_FOLDER:&'static str = "BLOCKS/";
@@ -75,8 +76,8 @@ pub struct Chain{
 }
 
 impl Chain{
-    pub fn new(root_path:&str) -> Result<Chain,&'static str>{
-        let root = String::from(root_path);
+    pub fn new() -> Result<Chain,&'static str>{
+        let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
         let path_height_st = root+CONFIG_FILE;
@@ -231,8 +232,8 @@ impl Chain{
 
     }
 
-    pub fn dump_config(&self, root_path:&str) -> Result<(),&'static str>{
-        let root = String::from(root_path);
+    pub fn dump_config(&self) -> Result<(),&'static str>{
+        let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_config = root+CONFIG_FILE;
 
         let result = File::create(path_config);
@@ -560,6 +561,7 @@ impl BlockChainTree{
         let summary_db = result.unwrap();
 
         let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
+        
         // open old summary db
         let result = DB::<MultiThreaded>::open_default(
                                     old_summary_db_path);
@@ -625,7 +627,45 @@ impl BlockChainTree{
         }
 
         // opening main chain
-        let result = Chain::new(MAIN_CHAIN_DIRECTORY);
+        let result = Chain::new();
+        if result.is_err(){
+            return Err(result.err().unwrap());
+        }
+        let main_chain = result.unwrap();
+
+
+        return Ok(BlockChainTree{trxs_pool:trxs_pool,
+                                summary_db:summary_db,
+                                main_chain:main_chain,
+                                old_summary_db:old_summary_db});
+    }
+
+    pub fn without_config() -> Result<BlockChainTree,&'static str>{
+        let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
+
+        // open summary db
+        let result = DB::<MultiThreaded>::open_default(
+                                        summary_db_path);
+        if result.is_err(){
+            return Err("Error opening summary db");
+        }
+        let summary_db = result.unwrap();
+
+        let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
+        
+        // open old summary db
+        let result = DB::<MultiThreaded>::open_default(
+                                    old_summary_db_path);
+        if result.is_err(){
+            return Err("Error opening old summary db");
+        }
+        let old_summary_db = result.unwrap();
+
+        // allocate VecDeque
+        let mut trxs_pool = VecDeque::<TransactionToken>::new();
+
+        // opening main chain
+        let result = Chain::new_without_config(MAIN_CHAIN_DIRECTORY,&GENESIS_BLOCK);
         if result.is_err(){
             return Err(result.err().unwrap());
         }
@@ -801,6 +841,24 @@ impl BlockChainTree{
             } 
         }
 
+        let derivatives_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);
+        let derivatives_path = Path::new(&derivatives_path);
+        if !derivatives_path.exists(){
+            let result = fs::create_dir(derivatives_path);
+            if result.is_err(){
+                return Err("Error creating derivatives path");
+            } 
+        }
+
+        let derivative_chains_path = String::from(DERIVATIVE_CHAINS_DIRECTORY)
+                                        +CHAINS_FOLDER;
+        let derivative_chains_path = Path::new(&derivative_chains_path);
+        if !derivative_chains_path.exists(){
+            let result = fs::create_dir(derivative_chains_path);
+            if result.is_err(){
+                return Err("Error creating derivatives path");
+            } 
+        }
         
         return Ok(());
     }
@@ -1004,7 +1062,36 @@ impl BlockChainTree{
         return Err("Not implemented");
     }
 
+    pub fn get_last_transactions(&mut self) -> Result<Option<Vec<TransactionToken>>,&'static str>{
+        
+        if self.trxs_pool.is_empty(){
+            return Ok(None);
+        }
 
+        let mut transactions_amount = MAX_TRANSACTIONS_PER_BLOCK;
+        if transactions_amount > self.trxs_pool.len(){
+            transactions_amount = self.trxs_pool.len();
+        }
+        let mut to_return:Vec<TransactionToken> = Vec::with_capacity(transactions_amount);
+
+        let mut counter = 0;
+
+        while counter < transactions_amount{
+            let result = self.trxs_pool.pop_back();
+            if result.is_none(){
+                break;
+            }
+            let tr = result.unwrap();
+
+            to_return.push(tr);
+            counter += 1;
+        }
+        return Ok(Some(to_return));
+    }
+
+    pub fn get_pool(&mut self) -> &VecDeque<TransactionToken>{
+        return &self.trxs_pool;
+    }
 
 }
 

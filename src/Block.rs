@@ -26,6 +26,7 @@ pub struct BasicInfo{
     timestamp:u64,
     PoW:BigUint,
     previous_hash:[u8;32],
+    current_hash:[u8;32],
     height:u64,
     difficulty:[u8;32]
 }
@@ -36,12 +37,14 @@ impl BasicInfo{
                 timestamp:u64,
                 PoW:BigUint,
                 previous_hash:[u8;32],
+                current_hash:[u8;32],
                 height:u64,
                 difficulty:[u8;32]) -> BasicInfo{
         return BasicInfo{//miner:miner,
                         timestamp:timestamp,
                         PoW:PoW,
                         previous_hash:previous_hash,
+                        current_hash:current_hash,
                         height:height,
                         difficulty:difficulty};
     }
@@ -49,6 +52,7 @@ impl BasicInfo{
     pub fn get_dump_size(&self) -> usize{
         let to_return = 8
                     + Tools::bigint_size(&self.PoW)
+                    + 32
                     + 32
                     + 8
                     + 32;
@@ -68,6 +72,11 @@ impl BasicInfo{
 
         // dumping previous hash
         for byte in self.previous_hash.iter(){
+            buffer.push(*byte);
+        }
+
+        // dumping current hash
+        for byte in self.current_hash.iter(){
             buffer.push(*byte);
         }
 
@@ -91,13 +100,9 @@ impl BasicInfo{
     pub fn parse(data:&[u8]) -> Result<BasicInfo,&'static str>{
         let mut index:usize = 0;
 
-        if data.len() <= 80{
+        if data.len() <= 112{
             return Err("Not enough data to parse");
         }
-        
-        // parsing miner
-        // let miner:[u8;33] = unsafe{transmute_copy(&data[index])};
-        // index += 33;
 
         // parsing timestamp
         let timestamp = bytes_to_u64!(data,index);
@@ -105,6 +110,10 @@ impl BasicInfo{
 
         // parsing previous hash
         let previous_hash:[u8;32] = unsafe{transmute_copy(&data[index])};
+        index += 32;
+
+        // parsing current hash
+        let current_hash:[u8;32] = unsafe{transmute_copy(&data[index])};
         index += 32;
 
         // parsing height
@@ -126,10 +135,10 @@ impl BasicInfo{
             Ok(a) => {PoW = a.0;}
         }
 
-        return Ok(BasicInfo{//miner:miner,
-                        timestamp:timestamp,
+        return Ok(BasicInfo{timestamp:timestamp,
                         PoW:PoW,
                         previous_hash:previous_hash,
+                        current_hash:current_hash,
                         height:height,
                         difficulty:difficulty});
     } 
@@ -413,26 +422,7 @@ impl TransactionBlock{
     }
 
     pub fn hash(&self) -> Result<[u8;32],&'static str>{
-        let dump_size = 32
-                        +self.default_info.get_dump_size()
-                        +Tools::bigint_size(&self.fee);
-        let mut dump:Vec<u8> = Vec::with_capacity(dump_size);
-
-        // merkle tree root
-        dump.extend(self.merkle_tree_root.iter());
-
-        // default info
-        let result = self.default_info.dump(&mut dump);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-
-        // fee
-        let result = Tools::dump_biguint(&self.fee, 
-                                        &mut dump);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
+        let dump:Vec<u8> = self.dump().unwrap();
 
         return Ok(Tools::hash(&dump));
     }
@@ -612,17 +602,13 @@ impl SummarizeBlock{
     }
 
     pub fn hash(&self) -> Result<[u8;32],&'static str>{
-        let dump_size = self.default_info.get_dump_size()
-                        +32;
-        let mut dump:Vec<u8> = Vec::with_capacity(dump_size); 
-    
-        let result = self.default_info.dump(&mut dump);
+        let result = self.dump();
+
         if result.is_err(){
             return Err(result.err().unwrap());
         }
-
-        let tr_hash = self.founder_transaction.hash(&self.default_info.previous_hash);
-        dump.extend(tr_hash.iter());
+        let dump:Vec<u8>; 
+        unsafe{dump = result.unwrap_unchecked();};
 
         return Ok(Tools::hash(&dump));
     }
@@ -655,7 +641,7 @@ impl SumTransactionBlock{
     pub fn is_summarize_block(&self) -> bool{
         return self.summarize_block.is_none();
     }
-    pub fn get_hash(&self) -> Result<[u8;32],&'static str>{
+    pub fn hash(&self) -> Result<[u8;32],&'static str>{
         if self.is_transaction_block(){
             return self.transaction_block.as_ref().unwrap().hash();
         }else{
