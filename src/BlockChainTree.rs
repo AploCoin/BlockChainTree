@@ -23,6 +23,7 @@ use std::collections::HashMap;
 use std::str;
 use std::path::Path;
 use rocksdb::{DBWithThreadMode as DB, Options, MultiThreaded};
+use Drop;
 use hex::ToHex;
 use num_traits::Zero;
 use crate::DumpHeaders::Headers;
@@ -323,6 +324,7 @@ impl DerivativeChain{
         let result = DB::<MultiThreaded>::open_default(
                                             path_blocks);
         if result.is_err(){
+            println!("{:?}",result);
             return Err("Error opening blocks db");
         }
         let db = result.unwrap();
@@ -392,13 +394,14 @@ impl DerivativeChain{
         let hash = Tools::hash(&dump);
 
 
-        let result = self.db.put(hash,dump);
+        let result = self.db.put(self.height.to_be_bytes(),
+                                dump);
         if result.is_err(){
             return Err("Error adding block");
         }
 
-        let result = self.height_reference.put(self.height.to_be_bytes(),
-                                                hash);
+        let result = self.height_reference.put(hash,
+                                            self.height.to_be_bytes());
         if result.is_err(){
             return Err("Error adding reference");
         }
@@ -541,8 +544,8 @@ impl DerivativeChain{
 
 pub struct BlockChainTree{
     trxs_pool: VecDeque<TransactionToken>,
-    summary_db: DB::<MultiThreaded>,
-    old_summary_db: DB::<MultiThreaded>,
+    summary_db: Option<DB::<MultiThreaded>>,
+    old_summary_db: Option<DB::<MultiThreaded>>,
     main_chain:Chain,
 
 }
@@ -635,9 +638,9 @@ impl BlockChainTree{
 
 
         return Ok(BlockChainTree{trxs_pool:trxs_pool,
-                                summary_db:summary_db,
+                                summary_db:Some(summary_db),
                                 main_chain:main_chain,
-                                old_summary_db:old_summary_db});
+                                old_summary_db:Some(old_summary_db)});
     }
 
     pub fn without_config() -> Result<BlockChainTree,&'static str>{
@@ -673,9 +676,9 @@ impl BlockChainTree{
 
 
         return Ok(BlockChainTree{trxs_pool:trxs_pool,
-                                summary_db:summary_db,
+                                summary_db:Some(summary_db),
                                 main_chain:main_chain,
-                                old_summary_db:old_summary_db});
+                                old_summary_db:Some(old_summary_db)});
     }
 
     pub fn dump_pool(&self) -> Result<(),&'static str>{
@@ -722,10 +725,11 @@ impl BlockChainTree{
         return Ok(());
     }
 
-    pub fn get_derivative_chain(&mut self,addr:&[u8;33]) -> Result<Option<Box<DerivativeChain>>,&'static str>{
+    pub fn get_derivative_chain(&mut self, addr:&[u8;33]) -> Result<Option<Box<DerivativeChain>>,&'static str>{
         let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr:String = addr.encode_hex::<String>();
         path_string += &hex_addr;
+        path_string += "/";
 
         let path = Path::new(&path_string);
         if path.exists(){
@@ -867,7 +871,7 @@ impl BlockChainTree{
 
     pub fn add_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(),&'static str>{
 
-        let result = self.summary_db.get(addr);
+        let result = self.summary_db.as_mut().unwrap().get(addr);
         match result{
             Ok(None)  => {
                 let mut dump:Vec<u8> = Vec::with_capacity(Tools::bigint_size(&funds));
@@ -876,7 +880,7 @@ impl BlockChainTree{
                     return Err(res.err().unwrap());
                 }
 
-                let res = self.summary_db.put(addr,&dump);
+                let res = self.summary_db.as_mut().unwrap().put(addr,&dump);
                 if res.is_err(){
                     return Err("Error putting funds");
                 }
@@ -896,7 +900,7 @@ impl BlockChainTree{
                     return Err(res.err().unwrap());
                 }
 
-                let res = self.summary_db.put(addr,&dump);
+                let res = self.summary_db.as_mut().unwrap().put(addr,&dump);
                 if res.is_err(){
                     return Err("Error putting funds");
                 }
@@ -911,7 +915,7 @@ impl BlockChainTree{
 
     pub fn decrease_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(),&'static str>{
 
-        let result = self.summary_db.get(addr);
+        let result = self.summary_db.as_mut().unwrap().get(addr);
         match result{
             Ok(None)  => {
                 return Err("Address doesn't have any coins");
@@ -933,7 +937,7 @@ impl BlockChainTree{
                     return Err(res.err().unwrap());
                 }
 
-                let res = self.summary_db.put(addr,&dump);
+                let res = self.summary_db.as_mut().unwrap().put(addr,&dump);
                 if res.is_err(){
                     return Err("Error putting funds");
                 }
@@ -948,7 +952,7 @@ impl BlockChainTree{
 
     pub fn get_funds(&mut self,addr:&[u8;33]) -> Result<BigUint,&'static str>{
 
-        let result = self.summary_db.get(addr);
+        let result = self.summary_db.as_mut().unwrap().get(addr);
         match result{
             Ok(None)  => {
                 return Ok(Zero::zero());
@@ -968,7 +972,7 @@ impl BlockChainTree{
     }
 
     pub fn get_old_funds(&mut self,addr:&[u8;33]) -> Result<BigUint,&'static str>{
-        let result = self.old_summary_db.get(addr);
+        let result = self.old_summary_db.as_mut().unwrap().get(addr);
         match result{
             Ok(None)  => {
                 return Ok(Zero::zero());
@@ -991,18 +995,14 @@ impl BlockChainTree{
         let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
         let sum_path = Path::new(AMMOUNT_SUMMARY);
         
+        self.old_summary_db = None;
+        self.summary_db = None;
+
         let result = DB::<MultiThreaded>::destroy(&Options::default(), 
                                     old_sum_path);
         if result.is_err(){
+            println!("{:?}",result);
             return Err("Error removing previous database");
-        }
-        
-        drop(&self.old_summary_db);
-        drop(&self.summary_db);
-
-        let result = fs::remove_dir_all(old_sum_path);
-        if result.is_err(){
-            return Err("Error deleting folder of an old database");
         }
 
         let result = fs::rename(sum_path,old_sum_path);
@@ -1020,14 +1020,14 @@ impl BlockChainTree{
         if result.is_err(){
             return Err("Error opening summarize db");
         }
-        self.summary_db = result.unwrap();
+        self.summary_db = Some(result.unwrap());
 
         let result = DB::<MultiThreaded>::open_default(
                                         old_sum_path);
         if result.is_err(){
             return Err("Error opening old summarize db");
         }
-        self.old_summary_db = result.unwrap();
+        self.old_summary_db = Some(result.unwrap());
 
         return Ok(());
     }

@@ -46,7 +46,7 @@ pub fn bigint_size(number:&BigUint) -> usize{
         amount_byte_size += 1;
     }
 
-    return amount_byte_size;
+    return amount_byte_size+1;
 }
 
 

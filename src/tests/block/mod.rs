@@ -1,31 +1,15 @@
-#![allow(dead_code)]
-#![allow(unused_imports)]
-#![allow(non_snake_case)]
-mod Transaction;
-mod Token;
-mod Tools;
-use num_bigint::BigUint;
-mod merkletree;
-mod Block;
-
-use rsa::PublicKey;
-use sha2::{Sha256, Digest};
-use std::convert::TryInto;
-use num_bigint::{ToBigUint};
-mod BlockChainTree;
-mod DumpHeaders;
-
-mod tests;
-
-use crate::Block::{BasicInfo,TokenBlock};
+use num_bigint::{ToBigUint, BigUint};
 use num_traits::FromPrimitive;
+
+use crate::{BlockChainTree::*, Block::{self, TransactionBlock, TransactionToken, BasicInfo, TokenBlock}, Transaction};
 
 
 static sender:&[u8;33] = b"123456789012345678901234567890123";
 static reciever:&[u8;33] = b"123456789012345678901234567890123";
 static signature:&[u8;64] = b"1234567890123456789012345678901234567890123456789012345678901234";
 
-fn main(){
+#[test]
+fn dump_parse_tokenblock(){
     let default_info = BasicInfo::new(500,
                             1000u64.to_biguint().unwrap(),
                             [0u8;32],

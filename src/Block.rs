@@ -22,7 +22,6 @@ macro_rules! bytes_to_u64  {
 static ALREADY_SET:&str = "data is already set";
 
 pub struct BasicInfo{
-    //miner:[u8;33],
     timestamp:u64,
     PoW:BigUint,
     previous_hash:[u8;32],
@@ -59,11 +58,6 @@ impl BasicInfo{
         return to_return;
     }
     pub fn dump(&self,buffer:&mut Vec<u8>) -> Result<(),&'static str>{
-
-        // // dumping miner
-        // for byte in self.miner.iter(){
-        //     buffer.push(*byte);
-        // }
 
         // dumping timestamp
         for byte in self.timestamp.to_be_bytes().iter(){
@@ -127,6 +121,7 @@ impl BasicInfo{
         // parsing PoW
         let result = Tools::load_biguint(&data[index..]);
         if result.is_err(){
+            println!("{:?}",result.err());
             return Err("Error loading PoW");
         }
         let PoW: BigUint;
@@ -430,9 +425,9 @@ impl TransactionBlock{
 }
 
 pub struct TokenBlock{
-    default_info:BasicInfo,
-    token_signature:String,
-    payment_transaction:Transaction
+    pub default_info:BasicInfo,
+    pub token_signature:String,
+    pub payment_transaction:Transaction
 }
 
 impl TokenBlock{
@@ -460,11 +455,13 @@ impl TokenBlock{
         // header
         dump.push(Headers::TokenBlock as u8);
 
-        for byte in self.token_signature.as_bytes().iter(){
-            dump.push(*byte);
-        }
-        dump.push(0);
+        // // dumping token signature
+        // for byte in self.token_signature.as_bytes().iter(){
+        //     dump.push(*byte);
+        // }
+        // dump.push(0);
 
+        // dumping payment transaction
         let transaction_len:u32 = self.payment_transaction.get_dump_size() as u32;
         dump.extend(transaction_len.to_be_bytes().iter());
 
@@ -472,9 +469,9 @@ impl TokenBlock{
         if result.is_err(){
             return Err("Error dumping payment transaction");
         }
-
         dump.extend(result.unwrap());
 
+        // dumping default info
         let result = self.default_info.dump(&mut dump);
         if result.is_err(){
             return Err("Error dumping default info");
@@ -486,33 +483,45 @@ impl TokenBlock{
     pub fn parse(data:&[u8],block_size:u32) -> Result<TokenBlock,&'static str>{
         
         let mut offset:usize = 0;
-        let mut token_signature:String = String::new();
-        for byte in data{
-            offset += 1;
-            if *byte == 0{
-                break;
-            }
-            token_signature.push(*byte as char);
-        }
 
+        // parsing token signature
+        let mut token_signature:String = String::new();
+        // for byte in data{
+        //     offset += 1;
+        //     if *byte == 0{
+        //         break;
+        //     }
+        //     token_signature.push(*byte as char);
+        // }
+
+        // parsing transaction
         let transaction_size:u32 = u32::from_be_bytes(data[offset..offset+4].try_into().unwrap());
         offset += 4;
-        let result = Transaction::parse_transaction(&data[offset..offset+transaction_size as usize], transaction_size as u64);
+        
+        if data[offset] != Headers::Transaction as u8{
+            return Err("Transaction wasn't found");
+        }
+        offset += 1;
+        let result = Transaction::parse_transaction(&data[offset..offset+transaction_size as usize], (transaction_size-1) as u64);
         if result.is_err(){
             return Err("Parsing transaction error");
         }
 
         let transaction = result.unwrap();
-        offset += transaction_size as usize;
+        offset += (transaction_size-1) as usize;
 
+        // parsing basic info 
         let result = BasicInfo::parse(&data[offset..block_size as usize]);
         if result.is_err(){
+            println!("{:?}",result.err());
             return Err("Parsing basic info error");
         }
         let default_info = result.unwrap();
 
         offset += default_info.get_dump_size();
 
+        println!("{:?}",offset);
+        println!("{:?}",block_size);
         if offset != block_size as usize{
             return Err("Error parsing token block");
         }

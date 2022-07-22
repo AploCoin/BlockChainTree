@@ -163,10 +163,9 @@ impl Transaction{
         let calculated_size:usize = 1
                                 +33
                                 +33
+                                +8
                                 +64
-                                +Tools::bigint_size(&self.amount)
-                                +1
-                                +8;
+                                +Tools::bigint_size(&self.amount);
         return calculated_size;
     }
 
