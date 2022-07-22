@@ -121,7 +121,6 @@ impl BasicInfo{
         // parsing PoW
         let result = Tools::load_biguint(&data[index..]);
         if result.is_err(){
-            println!("{:?}",result.err());
             return Err("Error loading PoW");
         }
         let PoW: BigUint;
@@ -513,15 +512,12 @@ impl TokenBlock{
         // parsing basic info 
         let result = BasicInfo::parse(&data[offset..block_size as usize]);
         if result.is_err(){
-            println!("{:?}",result.err());
             return Err("Parsing basic info error");
         }
         let default_info = result.unwrap();
 
         offset += default_info.get_dump_size();
 
-        println!("{:?}",offset);
-        println!("{:?}",block_size);
         if offset != block_size as usize{
             return Err("Error parsing token block");
         }

@@ -324,7 +324,6 @@ impl DerivativeChain{
         let result = DB::<MultiThreaded>::open_default(
                                             path_blocks);
         if result.is_err(){
-            println!("{:?}",result);
             return Err("Error opening blocks db");
         }
         let db = result.unwrap();
@@ -1001,7 +1000,6 @@ impl BlockChainTree{
         let result = DB::<MultiThreaded>::destroy(&Options::default(), 
                                     old_sum_path);
         if result.is_err(){
-            println!("{:?}",result);
             return Err("Error removing previous database");
         }
 

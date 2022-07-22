@@ -28,6 +28,5 @@ fn dump_parse_tokenblock(){
     let dump = block.dump().unwrap();
 
     let block_parsed = TokenBlock::parse(&dump[1..],(dump.len()-1) as u32).unwrap();
-
     
 }
