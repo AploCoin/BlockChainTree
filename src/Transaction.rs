@@ -4,7 +4,7 @@ use std::convert::TryInto;
 use std::mem::transmute_copy;
 use crate::Tools;
 
-use secp256k1::{Secp256k1, Message};
+use secp256k1::{Secp256k1, Message, SecretKey};
 use secp256k1::PublicKey;
 use secp256k1::ecdsa::Signature;
 use secp256k1::hashes::sha256;
@@ -45,7 +45,7 @@ impl Transaction{
         return base64::decode(&self.signature);
     }
 
-    pub fn hash(&self,prev_hash:&[u8;32])->Box<[u8;32]>{ 
+    pub fn hash(&self,prev_hash:&[u8;32]) -> Box<[u8;32]>{ 
         let mut hasher = Sha256::new();
 
         let amount_as_bytes = self.amount.to_bytes_be();
@@ -66,6 +66,40 @@ impl Transaction{
             concatenated_input.push(*byte);
         }
         for byte in self.signature.iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in self.timestamp.to_be_bytes().iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in amount_as_bytes.iter(){
+            concatenated_input.push(*byte);
+        }
+        
+        hasher.update(concatenated_input);
+        let result:[u8;32] = hasher.finalize().as_slice().try_into().unwrap();
+        let to_return = Box::new(result);
+        
+        return to_return;
+    }
+
+    pub fn hash_without_signature(&self,prev_hash:&[u8;32]) -> Box<[u8;32]>{
+        let mut hasher = Sha256::new();
+
+        let amount_as_bytes = self.amount.to_bytes_be();
+        let calculated_size:usize = 32
+                                    +33
+                                    +33
+                                    +8
+                                    +amount_as_bytes.len();
+        
+        let mut concatenated_input:Vec<u8> = Vec::with_capacity(calculated_size);
+        for byte in prev_hash.iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in self.sender.iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in self.receiver.iter(){
             concatenated_input.push(*byte);
         }
         for byte in self.timestamp.to_be_bytes().iter(){
@@ -119,7 +153,6 @@ impl Transaction{
         }
 
     }
-
 
     pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
         let timestamp_as_bytes:[u8;8] = self.timestamp.to_be_bytes();
@@ -235,4 +268,50 @@ impl Transaction{
         return &self.amount;
     }
 
+    pub fn sign(sender:&[u8;33],
+                receiver:&[u8;33],
+                timestamp:u64,
+                amount:BigUint,
+                prev_hash:&[u8;32],
+                private_key:&[u8;32]) -> Box<[u8;64]>{
+        
+        let mut hasher = Sha256::new();
+
+        let amount_as_bytes = amount.to_bytes_be();
+        let calculated_size:usize = 32
+                                    +33
+                                    +33
+                                    +8
+                                    +amount_as_bytes.len();
+                    
+        let mut concatenated_input:Vec<u8> = Vec::with_capacity(calculated_size);
+        for byte in prev_hash.iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in sender.iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in receiver.iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in timestamp.to_be_bytes().iter(){
+            concatenated_input.push(*byte);
+        }
+        for byte in amount_as_bytes.iter(){
+            concatenated_input.push(*byte);
+        }
+                    
+        hasher.update(concatenated_input);
+        let result:[u8;32] = hasher.finalize().as_slice().try_into().unwrap();
+        let message = unsafe{Message::from_slice(&result).unwrap_unchecked()};
+
+        let secret_key = unsafe{SecretKey::from_slice(private_key).unwrap_unchecked()};
+        
+        let signer = Secp256k1::new();
+
+        let signature = signer.sign_ecdsa(&message, &secret_key);
+
+        return Box::new(signature.serialize_compact());
+        
+    }
 }

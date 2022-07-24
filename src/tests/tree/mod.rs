@@ -16,6 +16,8 @@ fn create_chain() {
     let main_chain = blockchaintree.get_main_chain();
 }
 
+
+
 #[test]
 fn dump_main_chain_config(){
     BlockChainTree::check_main_folders().unwrap();
@@ -29,6 +31,8 @@ fn dump_main_chain_config(){
     let mut blockchaintree = BlockChainTree::with_config().unwrap();
 }
 
+
+
 #[test]
 fn add_funds(){
     BlockChainTree::check_main_folders().unwrap();
@@ -39,6 +43,8 @@ fn add_funds(){
     let funds = blockchaintree.get_funds(sender).unwrap();
     assert_eq!(funds,1000u64.to_biguint().unwrap());
 }
+
+
 
 #[test]
 fn decrease_funds(){
@@ -57,6 +63,8 @@ fn decrease_funds(){
     assert_eq!(funds,current_funds-5u64.to_biguint().unwrap());
 }
 
+
+
 #[test]
 fn move_database(){
     BlockChainTree::check_main_folders().unwrap();
@@ -72,6 +80,8 @@ fn move_database(){
     let current_funds = blockchaintree.get_funds(sender).unwrap();
     assert_eq!(current_funds,0u64.to_biguint().unwrap());
 }
+
+
 
 #[test]
 fn create_derivative_chain(){
@@ -89,6 +99,8 @@ fn create_derivative_chain(){
     let result = blockchaintree.get_derivative_chain(sender).unwrap();
     assert_eq!(result.is_none(),false);
 }
+
+
 
 #[test]
 fn derivative_add_block(){
@@ -122,6 +134,8 @@ fn derivative_add_block(){
 
 
 }
+
+
 
 #[test]
 fn dump_empty_pool(){

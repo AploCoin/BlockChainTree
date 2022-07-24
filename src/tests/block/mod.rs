@@ -29,4 +29,5 @@ fn dump_parse_tokenblock(){
 
     let block_parsed = TokenBlock::parse(&dump[1..],(dump.len()-1) as u32).unwrap();
     
+    println!("{:?}",block_parsed.token_signature);
 }

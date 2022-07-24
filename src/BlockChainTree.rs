@@ -436,7 +436,10 @@ impl DerivativeChain{
         }
         let dump = result.unwrap();
 
-        let result = TokenBlock::parse(&dump,dump.len() as u32);
+        if dump[0] != Headers::TokenBlock as u8{
+            return Err("Wrong header");
+        }
+        let result = TokenBlock::parse(&dump[1..],(dump.len()-1) as u32);
         if result.is_err(){
             return Err(result.err().unwrap());
         }
