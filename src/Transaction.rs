@@ -35,16 +35,6 @@ impl Transaction{
         return transaction;
     }
 
-    pub fn decode_current_owner(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.sender);
-    }
-    pub fn decode_previous_owner(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.receiver);
-    }
-    pub fn decode_signature(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.signature);
-    }
-
     pub fn hash(&self,prev_hash:&[u8;32]) -> Box<[u8;32]>{ 
         let mut hasher = Sha256::new();
 
