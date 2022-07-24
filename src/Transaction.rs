@@ -117,7 +117,7 @@ impl Transaction{
     }
 
     pub fn verify(&self,prev_hash:&[u8;32]) -> Result<bool,&'static str>{
-        let signed_data_hash:Box<[u8;32]> = self.hash(prev_hash);
+        let signed_data_hash:Box<[u8;32]> = self.hash_without_signature(prev_hash);
 
         // load sender
         let result = PublicKey::from_slice(&self.sender);
@@ -147,6 +147,7 @@ impl Transaction{
         let result = verifier.verify_ecdsa(&message,
                                             &signature,
                                             &sender);
+
         match result{
             Err(_) => {return Ok(false);}
             Ok(_) => {return Ok(true);}
