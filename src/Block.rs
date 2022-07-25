@@ -21,6 +21,7 @@ macro_rules! bytes_to_u64  {
 
 static ALREADY_SET:&str = "data is already set";
 
+#[derive(Debug)]
 pub struct BasicInfo{
     timestamp:u64,
     PoW:BigUint,
@@ -138,14 +139,15 @@ impl BasicInfo{
     } 
 }
 
+#[derive(Debug)]
 pub struct TransactionToken{
     transaction:Option<Transaction>,
     token:Option<Token::TokenAction>
 }
 impl TransactionToken{
-    pub fn new()->TransactionToken{
-        return TransactionToken{transaction:None,
-                                token:None};
+    pub fn new(tr:Option<Transaction>,tk:Option<Token::TokenAction>)->TransactionToken{
+        return TransactionToken{transaction:tr,
+                                token:tk};
     }
     pub fn is_empty(&self) -> bool{
         return self.transaction.is_none() && self.token.is_none();  
@@ -210,7 +212,7 @@ impl TransactionToken{
     }   
 }
 
-
+#[derive(Debug)]
 pub struct TransactionBlock{
     transactions:Vec<TransactionToken>,
     fee:BigUint,
@@ -363,26 +365,28 @@ impl TransactionBlock{
         let mut transactions:Vec<TransactionToken> = Vec::with_capacity(amount_of_transactions as usize);
 
         for _ in 0..amount_of_transactions{
-            let transaction_size:u32 = u32::from_be_bytes(data[offset..offset+4].try_into().unwrap());
+            let transaction_size:u32 = u32::from_be_bytes(data[offset..offset+4].try_into().unwrap())-1;
             
             offset += 4; // inc offset
 
             let trtk_type:u8 = data[offset];
-            let mut trtk:TransactionToken = TransactionToken::new();
+            offset += 1;
 
-            if trtk_type == 0{
+            let mut trtk:TransactionToken = TransactionToken::new(None,None);
+
+            if trtk_type == Headers::Transaction as u8{
                 // if transaction
                 let result = Transaction::parse_transaction(
                     &data[offset..offset+(transaction_size as usize)],transaction_size as u64);
                 if result.is_err(){
-                    return Err("Error parsing token");
+                    return Err("Error parsing transaction");
                 }
                 let transaction = result.unwrap();
                 let result = trtk.set_transaction(transaction);
                 if result.is_err(){
                     return Err("Error setting transaction");
                 }
-            } else if trtk_type == 1{
+            } else if trtk_type == Headers::Token as u8{
                 // if token action
                 let result = Token::TokenAction::parse(
                     &data[offset..offset+(transaction_size as usize)],transaction_size as u64);

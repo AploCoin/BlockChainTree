@@ -622,8 +622,7 @@ impl BlockChainTree{
                 }
                 let transaction = result.unwrap();
 
-                let mut tr_wrapped = TransactionToken::new();
-                tr_wrapped.set_transaction(transaction).unwrap();
+                let tr_wrapped = TransactionToken::new(Some(transaction),None);
                 trxs_pool.push_back(tr_wrapped);
 
             }else{
