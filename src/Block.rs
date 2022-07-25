@@ -251,16 +251,20 @@ impl TransactionBlock{
     }
 
     pub fn check_merkle_tree(&mut self) -> Result<bool,&'static str>{
+        // build merkle tree if not built
         if !self.merkle_tree_is_built(){
             let res = self.build_merkle_tree();
             if res.is_err(){
                 return Err(res.err().unwrap());
             }
         }
-        let constructed_tree_root_raw = self.merkle_tree.as_ref().unwrap().get_root();
-        
+
+        // transmute computed root into 4 u64 bytes 
+        let constructed_tree_root_raw = self.merkle_tree.as_ref().unwrap().get_root(); 
         let constructed_tree_root_raw_root:&[u64;4] = unsafe{
                                 transmute(constructed_tree_root_raw)};
+        
+        // transmute root into 4 u64 bytes 
         let root:&[u64;4] = unsafe{transmute(&self.merkle_tree_root)};
 
         for (a,b) in root.iter().zip(
