@@ -568,6 +568,7 @@ impl SummarizeBlock{
                 +self.default_info.get_dump_size()
                 +self.founder_transaction.get_dump_size();
     }
+    
     pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
 
         let mut to_return:Vec<u8> = Vec::with_capacity(self.get_dump_size());
