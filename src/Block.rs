@@ -600,11 +600,16 @@ impl SummarizeBlock{
         let mut offset:usize = 0;
         
         // parse transaction
-        let transaction_size:usize = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize;
+        let transaction_size:usize = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize - 1;
         offset += 8;
         if data.len()<transaction_size+8{
             return Err("Error while parsing transaction");
         }
+        if data[offset] != Headers::Transaction as u8{
+            return Err("Transaction header is not found");
+        }
+        offset += 1;
+
         let result = Transaction::parse_transaction(&data[offset..offset+transaction_size], transaction_size as u64);
         if result.is_err(){
             return Err(result.err().unwrap());

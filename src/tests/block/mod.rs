@@ -1,7 +1,7 @@
 use num_bigint::{ToBigUint, BigUint};
 use num_traits::FromPrimitive;
 
-use crate::{BlockChainTree::*, Block::{self, TransactionBlock, TransactionToken, BasicInfo, TokenBlock}, Transaction};
+use crate::{BlockChainTree::*, Block::{self, TransactionBlock, TransactionToken, BasicInfo, TokenBlock, SummarizeBlock}, Transaction};
 use crate::merkletree;
 
 static sender:&[u8;33] = b"123456789012345678901234567890123";
@@ -86,6 +86,7 @@ fn dump_parse_transactionblock(){
 
 #[test]
 fn check_merkle_tree(){
+
     let default_info = BasicInfo::new(500,
         1000u64.to_biguint().unwrap(),
         prev_hash.clone(),
@@ -134,4 +135,26 @@ fn check_merkle_tree(){
     let res = block.check_merkle_tree().unwrap();
     assert!(res);
     
+}
+
+#[test]
+fn dump_parse_summarizeblock(){
+    let default_info = BasicInfo::new(500,
+        1000u64.to_biguint().unwrap(),
+        [0u8;32],
+        [1u8;32],
+        0,
+        [5u8;32]);
+    let transaction = Transaction::Transaction::new(sender,
+                        reciever,
+                        228,
+                        signature,
+                        1000u64.to_biguint().unwrap());
+
+    let block = SummarizeBlock::new(default_info,transaction);
+    
+    let dump = block.dump().unwrap();
+
+    let loaded_block = SummarizeBlock::parse(&dump[1..]).unwrap();
+
 }
