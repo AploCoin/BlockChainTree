@@ -245,7 +245,10 @@ impl TransactionBlock{
             hashes.push(Box::leak(res));      
         }
 
-        new_merkle_tree.add_objects(hashes);
+        let res = new_merkle_tree.add_objects(hashes);
+        if !res{
+            return Err("Error adding objects to the merkle tree");
+        }
         self.merkle_tree = Some(new_merkle_tree);
         return Ok(());
     }

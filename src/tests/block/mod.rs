@@ -83,3 +83,55 @@ fn dump_parse_transactionblock(){
     let block = TransactionBlock::parse(&dump[1..], (dump.len()-1) as u32).unwrap();
 
 }
+
+#[test]
+fn check_merkle_tree(){
+    let default_info = BasicInfo::new(500,
+        1000u64.to_biguint().unwrap(),
+        prev_hash.clone(),
+        [1u8;32],
+        0,
+        [5u8;32]);
+            
+
+    let mut hashes:Vec<&[u8;32]> = Vec::with_capacity(5);
+
+    let transaction = Transaction::Transaction::new(sender,
+    reciever,
+    228,
+    signature,
+    1000u64.to_biguint().unwrap());
+
+    let hash = transaction.hash(prev_hash);
+
+    hashes.push(&hash);
+    hashes.push(&hash);
+    hashes.push(&hash);
+    hashes.push(&hash);
+    hashes.push(&hash);
+
+    let mut mk_tree = merkletree::MerkleTree::new();
+
+    mk_tree.add_objects(hashes);
+
+    let mut transactions:Vec<TransactionToken> = Vec::new();
+
+    for i in 0..5{
+    let transaction = Transaction::Transaction::new(sender,
+                            reciever,
+                            228,
+                            signature,
+                            1000u64.to_biguint().unwrap());
+    let tr_tk = TransactionToken::new(Some(transaction),None);
+    transactions.push(tr_tk);
+    }
+
+    let mut block = TransactionBlock::new(transactions,
+                                1000u64.to_biguint().unwrap(),
+                                default_info,
+                                *mk_tree.get_root());
+
+    let res = block.check_merkle_tree().unwrap();
+    assert!(res);
+    
+}
