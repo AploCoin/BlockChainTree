@@ -538,6 +538,13 @@ impl TokenBlock{
                             token_signature:token_signature,
                             payment_transaction:transaction});
     }
+
+    pub fn hash(&self) -> Result<[u8;32],&'static str>{
+        let dump:Vec<u8> = self.dump().unwrap();
+
+        return Ok(Tools::hash(&dump));
+    }
+
 }
 
 
