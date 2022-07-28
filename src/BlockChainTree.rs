@@ -156,8 +156,8 @@ impl Chain{
             return Err("Error adding block");
         }
 
-        let result = self.height_reference.put(self.height.to_be_bytes(),
-                                                hash);
+        let result = self.height_reference.put(hash,
+                                                    self.height.to_be_bytes());
         if result.is_err(){
             return Err("Error adding reference");
         }
@@ -1062,7 +1062,7 @@ impl BlockChainTree{
         return Err("Not implemented");
     }
 
-    pub fn get_last_transactions(&mut self) -> Result<Option<Vec<TransactionToken>>,&'static str>{
+    pub fn pop_last_transactions(&mut self) -> Result<Option<Vec<TransactionToken>>,&'static str>{
         
         if self.trxs_pool.is_empty(){
             return Ok(None);
