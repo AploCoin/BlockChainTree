@@ -1,19 +1,35 @@
-#[derive(Debug)]
-pub enum NodeError {
-    CannotCreateFile(&'static str),
+
+use thiserror::Error;
+use colored::Colorize;
+
+macro_rules! root_errors {
+    [$($name:ident : $msg:tt {$($vars:ident),*}),*] => {
+        $(
+            #[derive(Debug, Error)]
+            #[error($msg)]
+            pub enum $name {
+                $(
+                    $vars,
+                )*
+            }
+        )*
+    };
 }
 
-#[derive(Debug)]
-pub enum BlockError {
-    CannotCreateFile(&'static str),
-}
+root_errors![
+    
+    BlockError : "Error ocurred while operating with a block" {
+        BasicInfoError,
+        TransactionTokenError,
+        TransactionBlockError,
+        TokenBlockError,
+        SummarizeBlockError,
+        SumTransactionBlockError
+    },
 
-#[derive(Debug)]
-pub enum TreeError {
-    CannotCreateFile(&'static str),
-}
+    ToolsError : "Error ocurred while calling a tool function" {
+        BiguintError,
+        ZstdError
+    }
 
-#[derive(Debug)]
-pub enum TokenError {
-    CannotCreateFile(&'static str),
-}
+];
