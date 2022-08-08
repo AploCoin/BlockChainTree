@@ -10,9 +10,13 @@ use byteorder::{BigEndian, ReadBytesExt};
 use std::mem::transmute;
 use std::mem::transmute_copy;
 use crate::DumpHeaders::Headers;
+use crate::Errors::*;
+
+use error_stack::{Report, Result, ResultExt, IntoReport};
 
 
 #[macro_export]
+
 macro_rules! bytes_to_u64  {
     ($buffer:expr,$buffer_index:expr) => {
        (&$buffer[$buffer_index..$buffer_index+8]).read_u64::<BigEndian>().unwrap()
@@ -58,7 +62,7 @@ impl BasicInfo{
                     + 32;
         return to_return;
     }
-    pub fn dump(&self,buffer:&mut Vec<u8>) -> Result<(),&'static str>{
+    pub fn dump(&self,buffer:&mut Vec<u8>) -> Result<(), BlockError>{
 
         // dumping timestamp
         for byte in self.timestamp.to_be_bytes().iter(){
@@ -84,19 +88,21 @@ impl BasicInfo{
         buffer.extend(self.difficulty);
 
         // dumping PoW
-        let result = Tools::dump_biguint(&self.PoW, buffer);
-        if result.is_err(){
-            return Err("could not dump PoW");
-        }
+        Tools::dump_biguint(&self.PoW, buffer)
+        .attach_printable("Error dumping basic info: couldn't dump PoW")
+        .change_context(BlockError::BasicInfoError);
 
         return Ok(());
     }
 
-    pub fn parse(data:&[u8]) -> Result<BasicInfo,&'static str>{
+    pub fn parse(data:&[u8]) -> Result<BasicInfo, BlockError>{
         let mut index:usize = 0;
 
         if data.len() <= 112{
-            return Err("Not enough data to parse");
+            return Err(
+                Report::new(BlockError::BasicInfoError)
+                .attach_printable("Error parsing basic info: data length is bigger than 112")
+            );
         }
 
         // parsing timestamp
@@ -120,15 +126,9 @@ impl BasicInfo{
         index += 32;
         
         // parsing PoW
-        let result = Tools::load_biguint(&data[index..]);
-        if result.is_err(){
-            return Err("Error loading PoW");
-        }
-        let PoW: BigUint;
-        match result{
-            Err(e)=>{return Err(e);}
-            Ok(a) => {PoW = a.0;}
-        }
+        let (PoW, _) = Tools::load_biguint(&data[index..])
+        .attach_printable("Error parsing basic info: couldn't parse PoW")
+        .change_context(BlockError::BasicInfoError)?;
 
         return Ok(BasicInfo{timestamp:timestamp,
                         PoW:PoW,
@@ -162,9 +162,12 @@ impl TransactionToken{
 
     pub fn set_transaction(&mut self, 
                             transaction:Transaction) 
-                            -> Result<(),&'static str>{
+                            -> Result<(), BlockError>{
         if !self.is_empty(){
-            return Err(ALREADY_SET);
+            return Err(
+                Report::new(BlockError::TransactionTokenError)
+                .attach_printable("Error setting transaction in TransactionToken: transaction already set")
+            );
         }
 
         self.transaction = Some(transaction);
@@ -172,9 +175,12 @@ impl TransactionToken{
         return Ok(());
     }
     pub fn set_token(&mut self, token:Token::TokenAction) 
-                            -> Result<(),&'static str>{
+                            -> Result<(), BlockError>{
         if !self.is_empty(){
-            return Err(ALREADY_SET);
+            return Err(
+                Report::new(BlockError::TransactionTokenError)
+                .attach_printable("Error setting token in TransactionToken: token already set")
+            );
         }
 
         self.token = Some(token);
@@ -203,9 +209,11 @@ impl TransactionToken{
             return self.token.as_ref().unwrap().get_dump_size();
         }
     }
-    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+
+    //TODO
+    pub fn dump(&self) -> Result<Vec<u8>,BlockError>{
         if self.is_transaction(){
-            return self.transaction.as_ref().unwrap().dump();
+            return self.transaction.as_ref().unwrap().dump()
         }else{
             return self.token.as_ref().unwrap().dump();
         }
@@ -236,7 +244,7 @@ impl TransactionBlock{
         return !self.merkle_tree.is_none();
     }
 
-    pub fn build_merkle_tree(&mut self) ->Result<(),&'static str>{
+    pub fn build_merkle_tree(&mut self) ->Result<(), BlockError>{
         let mut new_merkle_tree = MerkleTree::new();
         let mut hashes:Vec<&[u8;32]> = Vec::with_capacity(self.transactions.len());
 
@@ -247,19 +255,19 @@ impl TransactionBlock{
 
         let res = new_merkle_tree.add_objects(hashes);
         if !res{
-            return Err("Error adding objects to the merkle tree");
+            return Err(
+                Report::new(BlockError::TransactionBlockError)
+                .attach_printable("Error building merkle tree")
+            );
         }
         self.merkle_tree = Some(new_merkle_tree);
         return Ok(());
     }
 
-    pub fn check_merkle_tree(&mut self) -> Result<bool,&'static str>{
+    pub fn check_merkle_tree(&mut self) -> Result<bool, BlockError>{
         // build merkle tree if not built
         if !self.merkle_tree_is_built(){
-            let res = self.build_merkle_tree();
-            if res.is_err(){
-                return Err(res.err().unwrap());
-            }
+            self.build_merkle_tree()?;
         }
 
         // transmute computed root into 4 u64 bytes 
@@ -291,7 +299,7 @@ impl TransactionBlock{
         return size;
     }
 
-    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+    pub fn dump(&self) -> Result<Vec<u8>, BlockError>{
         let size:usize = self.get_dump_size();
 
         let mut to_return:Vec<u8> = Vec::with_capacity(size);
@@ -303,21 +311,22 @@ impl TransactionBlock{
         to_return.extend(self.merkle_tree_root.iter());
 
         // default info
-        let result = self.default_info.dump(&mut to_return);
-        if result.is_err(){
-            return Err("Error dumping default info");
-        }
+        self.default_info.dump(&mut to_return)
+        .attach_printable("Error dumping transaction block: couldn't dump basic info")
+        .change_context(BlockError::TransactionBlockError)?;
 
         // fee
-        let result = Tools::dump_biguint(&self.fee, &mut to_return);
-        if result.is_err(){
-            return Err("Error dumping BigUInt");
-        }
+        Tools::dump_biguint(&self.fee, &mut to_return)
+        .attach_printable("Error dumping transaction block: couldn't dump fee")
+        .change_context(BlockError::TransactionBlockError)?;
         
         // amount of transactions
         let amount_of_transactions:u16;
         if self.transactions.len() > 0xFFFF{
-            return Err("Too much transactions");
+            return Err(
+                Report::new(BlockError::TransactionBlockError)
+                .attach_printable("Error dumping transaction block: too many transactions")
+            );
         }else{
             amount_of_transactions = self.transactions.len() as u16
         }
@@ -338,7 +347,7 @@ impl TransactionBlock{
         return Ok(to_return);
     }
 
-    pub fn parse(data:&[u8],block_size:u32) -> Result<TransactionBlock,&'static str>{
+    pub fn parse(data:&[u8],block_size:u32) -> Result<TransactionBlock, BlockError>{
         let mut offset:usize = 0;
 
         // merkle tree root
@@ -347,22 +356,19 @@ impl TransactionBlock{
 
         
         // default info
-        let result = BasicInfo::parse(&data[offset..]);
-        if result.is_err(){
-            return Err("Bad BasicInfo");
-        }
-        let default_info:BasicInfo = result.unwrap();
+        let default_info = BasicInfo::parse(&data[offset..])
+        .attach_printable("Error parsing transaction block: couldn't parse basic info")
+        .change_context(BlockError::TransactionBlockError)?;
+
         offset += default_info.get_dump_size(); // inc offset
 
         // fee
-        let result = Tools::load_biguint(&data[offset..]);
-        if result.is_err(){
-            return Err("Error in parsing fee");
-        }
-        let result_enum = result.unwrap();
-        let fee = result_enum.0;
+        let (fee, _offset) = Tools::load_biguint(&data[offset..])
+        .attach_printable("Error parsing transaction block: couldn't parse fee")
+        .change_context(BlockError::TransactionBlockError)?;
+  
 
-        offset += result_enum.1; // inc offset
+        offset += _offset; // inc offset
 
         // transactions
         let amount_of_transactions:u16 = u16::from_be_bytes(
@@ -383,30 +389,33 @@ impl TransactionBlock{
 
             if trtk_type == Headers::Transaction as u8{
                 // if transaction
-                let result = Transaction::parse_transaction(
+                //TODO
+                let transaction = Transaction::parse_transaction(
                     &data[offset..offset+(transaction_size as usize)],transaction_size as u64);
-                if result.is_err(){
-                    return Err("Error parsing transaction");
-                }
-                let transaction = result.unwrap();
-                let result = trtk.set_transaction(transaction);
-                if result.is_err(){
-                    return Err("Error setting transaction");
-                }
+                    .attach_printable("Error parsing transaction block: couldn't parse transaction")
+                    .change_context(BlockError::TransactionBlock)
+                
+                trtk.set_transaction(transaction)
+                .attach_printable("Error parsing transaction block: couldn't set transaction")
+                .change_context(BlockError::TransactionBlockError)?;
+
             } else if trtk_type == Headers::Token as u8{
                 // if token action
-                let result = Token::TokenAction::parse(
+                //TODO
+                let token = Token::TokenAction::parse(
                     &data[offset..offset+(transaction_size as usize)],transaction_size as u64);
-                if result.is_err(){
-                    return Err("Error parsing token");
-                }
-                let token = result.unwrap();
-                let result = trtk.set_token(token);
-                if result.is_err(){
-                    return Err("Error setting token");
-                }  
+                    .attach_printable("Error parsing transaction block: couldn't parse token")
+                    .change_context(BlockError::TransactionBlock)
+                
+
+                trtk.set_token(token)
+                .attach_printable("Error parsing transaction block: couldn't set token")
+                .change_context(BlockError::TransactionBlockError)?;
             }else{
-                return Err("Not existant type");
+                return Err(
+                    Report::new(BlockError::TransactionBlockError)
+                    .attach_printable("Error parsing transaction block: type doesn't exist")
+                );
             }
             offset += transaction_size as usize; // inc offset
             
@@ -414,7 +423,10 @@ impl TransactionBlock{
         }
 
         if offset != block_size as usize{
-            return Err("Could not parse block");
+            return Err(
+                Report::new(BlockError::TransactionBlockError)
+                .attach_printable("Error parsing transaction block: couldn0t parse block")
+            );
         }
 
         let transaction_block = TransactionBlock::new(transactions,
@@ -426,7 +438,7 @@ impl TransactionBlock{
 
     }
 
-    pub fn hash(&self) -> Result<[u8;32],&'static str>{
+    pub fn hash(&self) -> Result<[u8;32],BlockError>{
         let dump:Vec<u8> = self.dump().unwrap();
 
         return Ok(Tools::hash(&dump));
@@ -457,7 +469,7 @@ impl TokenBlock{
                 +self.payment_transaction.get_dump_size();
     }
 
-    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+    pub fn dump(&self) -> Result<Vec<u8>, BlockError>{
         let dump_size:usize = self.get_dump_size();
         
         let mut dump:Vec<u8> = Vec::with_capacity(dump_size);
@@ -474,26 +486,25 @@ impl TokenBlock{
         // dumping payment transaction
         let transaction_len:u32 = self.payment_transaction.get_dump_size() as u32;
         dump.extend(transaction_len.to_be_bytes().iter());
-
+        
+        //TODO
         let result = self.payment_transaction.dump();
-        if result.is_err(){
-            return Err("Error dumping payment transaction");
-        }
-        dump.extend(result.unwrap());
+        .attach_printable("Error dumping transaction block: couldn't dump payment transaction");
+        .change_context(BlockError::TokenBlock)?;
+
+        dump.extend(result);
 
         // dumping default info
-        let result = self.default_info.dump(&mut dump);
-        if result.is_err(){
-            return Err("Error dumping default info");
-        }
+        self.default_info.dump(&mut dump)
+        .attach_printable("Error dumping token block: couldn't dump default info")
+        .change_context(BlockError::TokenBlockError)?;
 
         return Ok(dump);
     }
 
-    pub fn parse(data:&[u8],block_size:u32) -> Result<TokenBlock,&'static str>{
+    pub fn parse(data:&[u8],block_size:u32) -> Result<TokenBlock,BlockError>{
         
         let mut offset:usize = 0;
-
         // parsing token signature
         let mut token_signature:String = String::new();
         // for byte in data{
@@ -509,23 +520,25 @@ impl TokenBlock{
         offset += 4;
         
         if data[offset] != Headers::Transaction as u8{
-            return Err("Transaction wasn't found");
+            return Err(
+                Report::new(BlockError::TokenBlockError)
+                .attach_printable("Error parsing token block: couldn't find transaction")
+            )
         }
         offset += 1;
-        let result = Transaction::parse_transaction(&data[offset..offset+transaction_size as usize], (transaction_size-1) as u64);
-        if result.is_err(){
-            return Err("Parsing transaction error");
-        }
+
+        //TODO
+        let transaction = Transaction::parse_transaction(&data[offset..offset+transaction_size as usize], (transaction_size-1) as u64)
+        .attach_printable("Error parsing token block: couldn't parse transaction");
+        .change_context(BlockError::TokenBlockError)?;
 
         let transaction = result.unwrap();
         offset += (transaction_size-1) as usize;
 
         // parsing basic info 
-        let result = BasicInfo::parse(&data[offset..block_size as usize]);
-        if result.is_err(){
-            return Err("Parsing basic info error");
-        }
-        let default_info = result.unwrap();
+        let default_info = BasicInfo::parse(&data[offset..block_size as usize])
+        .attach_printable("Error parsing token block: couldn't parse basic info")
+        .change_context(BlockError::TokenBlockError)?;
 
         offset += default_info.get_dump_size();
 
@@ -539,7 +552,7 @@ impl TokenBlock{
                             payment_transaction:transaction});
     }
 
-    pub fn hash(&self) -> Result<[u8;32],&'static str>{
+    pub fn hash(&self) -> Result<[u8;32],BlockError>{
         let dump:Vec<u8> = self.dump().unwrap();
 
         return Ok(Tools::hash(&dump));
@@ -569,7 +582,7 @@ impl SummarizeBlock{
                 +self.founder_transaction.get_dump_size();
     }
     
-    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+    pub fn dump(&self) -> Result<Vec<u8>, BlockError>{
 
         let mut to_return:Vec<u8> = Vec::with_capacity(self.get_dump_size());
 
@@ -577,26 +590,27 @@ impl SummarizeBlock{
         to_return.push(Headers::SummarizeBlock as u8);
 
         // dump transaction
-        let result = self.founder_transaction.dump();
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        let mut transaction_dump = result.unwrap();
+        //TODO
+        let mut transaction_dump = self.founder_transaction.dump()
+        .attach_printable("Error dumping summarize block: couldn't dump transaction")
+        .change_context(BlockError::SummarizeBlockError)?;
+        
         to_return.extend((transaction_dump.len() as u64).to_be_bytes());
         to_return.append(&mut transaction_dump);
 
         // dump basic info
-        let result = self.default_info.dump(&mut to_return);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
+        self.default_info.dump(&mut to_return)?;
 
         return Ok(to_return);
     }
 
-    pub fn parse(data:&[u8]) -> Result<SummarizeBlock,&'static str>{
+    pub fn parse(data:&[u8]) -> Result<SummarizeBlock, BlockError>{
         if data.len() <= 8{
-            return Err("Not enough data");
+            return Err(
+                Report::new(BlockError::SumTransactionBlockError)
+                .attach_printable("Error parsing summarize block: not enough data")
+                .change_context(BlockError::SummarizeBlockError)
+            );
         }
         let mut offset:usize = 0;
         
@@ -604,18 +618,24 @@ impl SummarizeBlock{
         let transaction_size:usize = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize - 1;
         offset += 8;
         if data.len()<transaction_size+8{
-            return Err("Error while parsing transaction");
+            return Err(
+                Report::new(BlockError::SummarizeBlockError)
+                .attach_printable("Error parsing summarize block: data length < tx size (+8)")
+            );
         }
         if data[offset] != Headers::Transaction as u8{
-            return Err("Transaction header is not found");
+            return Err(
+                Report::new(BlockError::SummarizeBlockError)
+                .attach_printable("Error parsing summarize block: couldn't find headers")
+            );
         }
         offset += 1;
 
-        let result = Transaction::parse_transaction(&data[offset..offset+transaction_size], transaction_size as u64);
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        let transaction = result.unwrap();
+        //TODO
+        let transaction = Transaction::parse_transaction(&data[offset..offset+transaction_size], transaction_size as u64)
+        .attach_printable("Error parsing summarize block: couldn't parse transaction")
+        .change_context(BlockError::SummarizeBlockError)?;
+
         offset += transaction_size;
 
         // parse default info
@@ -630,14 +650,12 @@ impl SummarizeBlock{
 
     }
 
-    pub fn hash(&self) -> Result<[u8;32],&'static str>{
-        let result = self.dump();
+    pub fn hash(&self) -> Result<[u8;32],BlockError>{
+        let result = self.dump()
+        .attach_printable("Error hashing summarize block: couldn't dump")
+        .change_context(BlockError::SummarizeBlockError);
 
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        let dump:Vec<u8>; 
-        unsafe{dump = result.unwrap_unchecked();};
+        let dump:Vec<u8> = unsafe{result.unwrap_unchecked()}; 
 
         return Ok(Tools::hash(&dump));
     }
@@ -670,7 +688,7 @@ impl SumTransactionBlock{
     pub fn is_summarize_block(&self) -> bool{
         return self.summarize_block.is_none();
     }
-    pub fn hash(&self) -> Result<[u8;32],&'static str>{
+    pub fn hash(&self) -> Result<[u8;32],BlockError>{
         if self.is_transaction_block(){
             return self.transaction_block.as_ref().unwrap().hash();
         }else{
@@ -686,7 +704,7 @@ impl SumTransactionBlock{
         }
     }
 
-    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+    pub fn dump(&self) -> Result<Vec<u8>, BlockError>{
         if self.is_transaction_block(){
             return self.transaction_block.as_ref().unwrap().dump();
         }else{
