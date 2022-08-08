@@ -7,14 +7,19 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::io::Read;
+use crate::Errors::ToolsError;
+use error_stack::{Report, IntoReport, Result, ResultExt};
 
 
-pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(),&'static str>{
+pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(), ToolsError>{
     let number_bytes:Vec<u8> = number.to_bytes_le();
 
     let amount_of_bunches:usize = number_bytes.len();
     if amount_of_bunches>255{
-        return Err(&"Too big number");
+        return Err(
+            Report::new(ToolsError::BiguintError)
+            .attach_printable("Error dumping biguint: amount of bunches bigger than 255")
+        );
     }
 
     buffer.push(amount_of_bunches as u8);
@@ -28,11 +33,14 @@ pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(),&'static str
     return Ok(());
 }
 
-pub fn load_biguint(data:&[u8]) -> Result<(BigUint,usize),&'static str>{
+pub fn load_biguint(data:&[u8]) -> Result<(BigUint,usize), ToolsError>{
     let amount_of_bunches:u8 = data[0];
     let amount_of_bytes:usize = amount_of_bunches as usize;//*4;
     if data.len()<amount_of_bytes{
-        return Err(&"Wrong amount of bunches");
+        return Err(
+            Report::new(ToolsError::BiguintError)
+            .attach_printable(format!("Error loading biguint: wrong amount of data (length is {}, amount of bytes is {})", data.len(), amount_of_bytes))
+        );
     }
 
     let amount:BigUint = BigUint::from_bytes_be(&data[1..1+amount_of_bytes]);
@@ -58,54 +66,51 @@ pub fn hash(data:&[u8]) -> [u8;32]{
 }
 
 
-pub fn compress_to_file(output_file:String,data:&[u8])->Result<(),&'static str>{
+pub fn compress_to_file(output_file:String,data:&[u8])->Result<(), ToolsError>{
     let path = Path::new(&output_file);
-    let result = File::create(path);
-    if result.is_err(){
-        return Err("Error creating file");
-    }
-    let target = result.unwrap();
-
-
-    let result = zstd::Encoder::new(target,1);
-    if result.is_err(){
-        return Err("Error creating encoder");
-    }
-    let mut encoder = result.unwrap(); 
+    let target = File::create(path)
+    .report()
+    .attach_printable("Error creating file")
+    .change_context(ToolsError::ZstdError)?;
     
-    let result = encoder.write_all(data);
-    if result.is_err(){
-        return Err("Error encoding data");
-    }
 
-    let result = encoder.finish();
-    if result.is_err(){
-        return Err("Error closing file");
-    }
+    let encoder = zstd::Encoder::new(target,1)
+    .report()
+    .attach_printable("Error creating encoder")
+    .change_context(ToolsError::ZstdError)?;
+    
+    encoder.write_all(data)
+    .report()
+    .attach_printable("Error encoding data")
+    .change_context(ToolsError::ZstdError)?;
+
+    encoder.finish()
+    .report()
+    .attach_printable("Error closing file")
+    .change_context(ToolsError::ZstdError)?;
 
     return Ok(());
 }
 
-pub fn decompress_from_file(filename:String) -> Result<Vec<u8>,&'static str>{
+pub fn decompress_from_file(filename:String) -> Result<Vec<u8>, ToolsError>{
     let path = Path::new(&filename);
     let mut decoded_data:Vec<u8> = Vec::new();
 
-    let result = File::open(path);
-    if result.is_err(){
-        return Err("Error opening file");
-    }
-    let file = result.unwrap();
+    let file = File::open(path)
+    .report()
+    .attach_printable("Error opening file")
+    .change_context(ToolsError::ZstdError)?;
     
-    let result = zstd::Decoder::new(file);
-    if result.is_err(){
-        return Err("Error creating decoder");
-    }
-    let mut decoder = result.unwrap();
+    
+    let mut decoder = zstd::Decoder::new(file)
+    .report()
+    .attach_printable("Error creating decoder")
+    .change_context(ToolsError::ZstdError)?;
 
-    let result = decoder.read_to_end(&mut decoded_data);
-    if result.is_err(){
-        return Err("Error reading file");
-    }
+    let result = decoder.read_to_end(&mut decoded_data)
+    .report()
+    .attach_printable("Error reading file")
+    .change_context(ToolsError::ZstdError);
 
     return Ok(decoded_data);
 }
