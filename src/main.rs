@@ -14,7 +14,7 @@ use std::convert::TryInto;
 use num_bigint::{ToBigUint};
 mod BlockChainTree;
 mod DumpHeaders;
-
+mod Errors;
 mod tests;
 
 use crate::Block::{BasicInfo,TokenBlock};
