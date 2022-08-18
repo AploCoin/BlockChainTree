@@ -27,6 +27,12 @@ root_errors![
         SumTransactionBlockError
     },
 
+    TransactionError : "Error ocurred while operating on a transaction" {
+        VerifyError,
+        DumpError,
+        ParseError
+    },
+
     ToolsError : "Error ocurred while calling a tool function" {
         BiguintError,
         ZstdError
