@@ -3,7 +3,7 @@ use num_bigint::BigUint;
 use std::convert::TryInto;
 use std::mem::transmute_copy;
 use crate::Errors::TransactionError;
-use crate::Tools;
+use crate::{Tools, report};
 
 use secp256k1::{Secp256k1, Message, SecretKey};
 use secp256k1::PublicKey;
@@ -196,10 +196,7 @@ impl Transaction{
         let mut index:usize = 0;
 
         if data.len() <= 138{
-            return Err(
-                Report::new(TransactionError::ParseError)
-                .attach_printable("Bad transaction size")
-            );
+            report!(TransactionError::ParseError, "Bad transaction size")
         }
 
         // parsing sender address
@@ -226,10 +223,7 @@ impl Transaction{
 
         index += idx;
         if index != transaction_size as usize {
-            return Err(
-                Report::new(TransactionError::ParseError)
-                .attach_printable("Error parsing transaction")
-            )
+            report!(TransactionError::ParseError, "Error parsing transaction")
         }
 
         let transaction:Transaction = Transaction::new(

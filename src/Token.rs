@@ -6,11 +6,12 @@ use secp256k1::{Secp256k1, Message};
 use secp256k1::PublicKey;
 use secp256k1::ecdsa::Signature;
 use secp256k1::hashes::sha256;
-use crate::Tools;
+use crate::Errors::TokenError;
+use crate::{Tools, report};
 use std::mem::transmute_copy;
 
 
-
+use error_stack::{Report, Result, ResultExt, IntoReport};
 
 /*
     Token dumping protocol
@@ -44,20 +45,20 @@ impl Token{
                 smol_contract:String,
                 coin_supply:BigUint,
                 transfer_fee:BigUint,
-                assigned:bool)->Result<Token,&'static str>{
+                assigned:bool)->Result<Token, TokenError>{
         
         if !assigned{
             if token_data.len() != 0{
-                return Err("Token data is already set");
+                report!(TokenError::CreationError, "Token data is already set")
             }
             if !coin_supply.is_zero(){
-                return Err("Coin supply is already set");
+                report!(TokenError::CreationError, "Coin supply is already set")
             }
             if smol_contract.len() != 0{
-                return Err("Token is not assigned, but contract is set");
+                report!(TokenError::CreationError, "Token is not assigned, but contract is set");
             }
             if !transfer_fee.is_zero(){
-                return Err("Token is not assigned, but fee is set");
+                report!(TokenError::CreationError, "Token is not assigned, but fee is set");
             }
         }
 
@@ -82,17 +83,29 @@ impl Token{
         }
     }
 
-    pub fn decode_current_owner(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.current_owner);
+    pub fn decode_current_owner(&self) -> Result<Vec<u8>, TokenError>{
+        return base64::decode(&self.current_owner)
+        .report()
+        .attach_printable("Error decoding token current owner")
+        .change_context(TokenError::DecodeError);
     }
-    pub fn decode_signature(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.signature);
+    pub fn decode_signature(&self) -> Result<Vec<u8>, TokenError>{
+        return base64::decode(&self.signature)
+        .report()
+        .attach_printable("Error decoding token signature")
+        .change_context(TokenError::DecodeError);
     }
-    pub fn decode_token_data(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.token_data);
+    pub fn decode_token_data(&self) -> Result<Vec<u8>, TokenError>{
+        return base64::decode(&self.token_data)
+        .report()
+        .attach_printable("Error decoding token data")
+        .change_context(TokenError::DecodeError);
     }
-    pub fn decode_smol_contract(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.smol_contract);
+    pub fn decode_smol_contract(&self) -> Result<Vec<u8>, TokenError>{
+        return base64::decode(&self.smol_contract)
+        .report()
+        .attach_printable("Error decoding token smol contract")
+        .change_context(TokenError::DecodeError);
     }
 
     pub fn hash(&self)->Box<[u8;32]>{
@@ -166,7 +179,7 @@ impl Token{
         return size;
     }
 
-    pub fn verify(&self) -> Result<bool,&'static str>{
+    pub fn verify(&self) -> Result<bool, TokenError>{
         // converting BigUInts -> string -> bytes
         let coin_supply_as_string:String = self.coin_supply.to_str_radix(10);
         let coin_supply_as_bytes:&[u8] = coin_supply_as_string.as_bytes();
@@ -217,39 +230,30 @@ impl Token{
         let verifier = Secp256k1::verification_only(); 
         
         // loading message
-        let result = Message::from_slice(&signed_data);
-        if result.is_err(){
-            return Err("Error loading message");
-        }
-        let message = result.unwrap();
+        let message = Message::from_slice(&signed_data)
+        .report()
+        .attach_printable("Error verifying token: couldn't load message")
+        .change_context(TokenError::VerifyError)?;
 
         // loading public key
-        let result = PublicKey::from_slice(&self.current_owner);
-        if result.is_err(){
-            return Err("Error loading public key");
-        }
-        let public_key = result.unwrap();
+        let public_key = PublicKey::from_slice(&self.current_owner)
+        .report()
+        .attach_printable("Error verifying token: couldn't load public key")
+        .change_context(TokenError::VerifyError)?;
         
         // load signature
-        let result = Signature::from_compact(&self.signature);
-        if result.is_err(){
-            return Err("Error loading signature");
-        }
-        let signature = result.unwrap();
+        let signature = Signature::from_compact(&self.signature)
+        .report()
+        .attach_printable("Error verifying token: couldn't load signature")
+        .change_context(TokenError::VerifyError)?;
 
-
-        // verifying hashed data with public key
-        let result = verifier.verify_ecdsa(&message,
-                                            &signature,
-                                            &public_key);
-
-        match result{
+        match verifier.verify_ecdsa(&message,&signature,&public_key){
             Err(_) => {return Ok(false);}
             Ok(_) => {return Ok(true);}
         }
     }
 
-    pub fn dump(&self) -> Result<Vec<u8>,&'static str>{
+    pub fn dump(&self) -> Result<Vec<u8>, TokenError>{
         let calculated_size:usize = self.get_dump_size();
         
         let mut dumped_token:Vec<u8> = Vec::with_capacity(calculated_size);
@@ -287,17 +291,13 @@ impl Token{
             }
             dumped_token.push(0);
 
-            let res = Tools::dump_biguint(&self.transfer_fee, &mut dumped_token);
-            match res{
-                Err(e)=>{return Err(e)}
-                Ok(_)=>{}
-            }
+            Tools::dump_biguint(&self.transfer_fee, &mut dumped_token)
+            .attach_printable("Error dumping token: couldn't load transfer fee")
+            .change_context(TokenError::DumpError)?;
             
-            let res = Tools::dump_biguint(&self.coin_supply, &mut dumped_token);
-            match res{
-                Err(e)=>{return Err(e)}
-                Ok(_)=>{}
-            }
+            Tools::dump_biguint(&self.coin_supply, &mut dumped_token)
+            .attach_printable("Error dumping token: couldn't load coin supply")
+            .change_context(TokenError::DumpError)?;
         }
 
         return Ok(dumped_token);
@@ -307,7 +307,7 @@ impl Token{
     //     let mut index:usize = 0;
 
     //     if data.len() <= 131{
-    //         return Err("Could not parse token");
+    //         report!("Could not parse token");
     //     }
 
     //     //parsing current owner address
@@ -336,12 +336,12 @@ impl Token{
     //         while data[new_index] != 0{
     //             new_index += 1;
     //             if new_index >= token_size as usize{
-    //                 return Err(&"Could not find end of data");
+    //                 report!(&"Could not find end of data");
     //             }
     //         }
 
     //         if index == new_index{
-    //             return Err(&"data not found");
+    //             report!(&"data not found");
     //         }
 
     //         let mut token_data:String = String::with_capacity(new_index-index);
@@ -355,7 +355,7 @@ impl Token{
     //         while data[new_index] != 0{
     //             new_index += 1;
     //             if new_index >= token_size as usize{
-    //                 return Err(&"Could not find an end of contract");
+    //                 report!(&"Could not find an end of contract");
     //             }
     //         }
     //         let mut contract:String = String::with_capacity(new_index-index);
@@ -369,7 +369,7 @@ impl Token{
     //         let res = Tools::load_biguint(&data[index..]);
     //         let transfer_fee:BigUint;
     //         match res{
-    //             Err(e) =>{return Err(e)}
+    //             Err(e) =>{report!(e)}
     //             Ok(a) => {
     //                 transfer_fee = a.0;
     //                 index += a.1;
@@ -380,7 +380,7 @@ impl Token{
     //         let res = Tools::load_biguint(&data[index..]);
     //         let coin_supply:BigUint;
     //         match res{
-    //             Err(e) =>{return Err(e)}
+    //             Err(e) =>{report!(e)}
     //             Ok(a) => {
     //                 coin_supply = a.0;
     //                 index += a.1;
@@ -388,7 +388,7 @@ impl Token{
     //         }
 
     //         if index != token_size as usize{
-    //             return Err(&"Wrong size of token");
+    //             report!(&"Wrong size of token");
     //         }
 
     //         let token_res = Token::new(current_owner,
@@ -401,7 +401,7 @@ impl Token{
     //                                     assigned);
     //         let token:Token;
     //         match token_res{
-    //             Err(e) => {return Err(e)}
+    //             Err(e) => {report!(e)}
     //             Ok(a) => {token = a}
     //         }
             
@@ -410,7 +410,7 @@ impl Token{
 
     //     index += 1;
     //     if index != token_size as usize{
-    //         return Err(&"Wrong size of token");
+    //         report!(&"Wrong size of token");
     //     }
 
     //     let token_res = Token::new(current_owner,
@@ -423,7 +423,7 @@ impl Token{
     //                                 assigned);
     //     let token:Token;
     //     match token_res{
-    //         Err(e)=>{return Err(e)}
+    //         Err(e)=>{report!(e)}
     //         Ok(a) => {token = a} 
     //     }
 
@@ -467,14 +467,23 @@ impl TokenAction{
                         timestamp:timestamp};
     }
 
-    pub fn decode_current_owner(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.current_owner);
+    pub fn decode_current_owner(&self) -> Result<Vec<u8>, TokenError>{
+        return base64::decode(&self.current_owner)
+        .report()
+        .attach_printable("Error decoding token action: couldn't decode current owner")
+        .change_context(TokenError::DecodeError)
     }
-    pub fn decode_previous_owner(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.previous_owner);
+    pub fn decode_previous_owner(&self) -> Result<Vec<u8>, TokenError>{
+        return base64::decode(&self.previous_owner)
+        .report()
+        .attach_printable("Error decoding token action: couldn't decode previous owner")
+        .change_context(TokenError::DecodeError)
     }
-    pub fn decode_signature(&self) -> Result<Vec<u8>, base64::DecodeError>{
-        return base64::decode(&self.signature);
+    pub fn decode_signature(&self) -> Result<Vec<u8>, TokenError>{
+        return base64::decode(&self.signature)
+        .report()
+        .attach_printable("Error decoding token action: couldn't decode signature")
+        .change_context(TokenError::DecodeError);
     }
 
     pub fn hash(&self,prev_hash:&[u8;32])->Box<[u8;32]>{
@@ -512,14 +521,14 @@ impl TokenAction{
     //     let res = base64::decode(&self.signature);
     //     let decoded_signature:Vec<u8>;
     //     match res{
-    //         Err(_) => {return Err(&"Signature decoding error")},
+    //         Err(_) => {report!(&"Signature decoding error")},
     //         Ok(r) => {decoded_signature = r;}
     //     }
 
     //     let res = base64::decode(&self.previous_owner);
     //     let decoded_sender:Vec<u8>;
     //     match res{
-    //         Err(_) => {return Err(&"Sender decoding error")},
+    //         Err(_) => {report!(&"Sender decoding error")},
     //         Ok(r) => {decoded_sender = r;}
     //     }
 
@@ -527,7 +536,7 @@ impl TokenAction{
     //     let sender_public = RsaPublicKey::from_pkcs1_der(&decoded_sender);
     //     let decoded_sender_public:RsaPublicKey;
     //     match sender_public{
-    //         Err(_) => {return Err(&"Public key decoding error")},
+    //         Err(_) => {report!(&"Public key decoding error")},
     //         Ok(key) => {decoded_sender_public = key;}
     //     }
     //     let padding_scheme = PaddingScheme::new_pkcs1v15_sign(Some(SHA2_256));
@@ -542,10 +551,10 @@ impl TokenAction{
     pub fn get_dump_size(&self)->usize{
         return 0;
     }
-    pub fn dump(&self)->Result<Vec<u8>,&'static str>{
-        return Err("Not implemented yet");
+    pub fn dump(&self)->Result<Vec<u8>, TokenError>{
+        report!(TokenError::NotImplementedYet, "Not implemented yet");
     }
-    pub fn parse(data:&[u8],token_size:u64)->Result<TokenAction,&'static str>{
-        return Err("Not implemented yet");
+    pub fn parse(data:&[u8],token_size:u64)->Result<TokenAction, TokenError>{
+        report!(TokenError::NotImplementedYet, "Not implemented yet");
     }
 }

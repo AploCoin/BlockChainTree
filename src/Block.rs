@@ -5,6 +5,7 @@ use crate::Tools;
 use crate::merkletree::MerkleTree;
 use crate::Transaction::Transaction;
 use crate::Token;
+use crate::report;
 use base64;
 use byteorder::{BigEndian, ReadBytesExt};
 use std::mem::transmute;
@@ -99,10 +100,7 @@ impl BasicInfo{
         let mut index:usize = 0;
 
         if data.len() <= 112{
-            return Err(
-                Report::new(BlockError::BasicInfoError)
-                .attach_printable("Error parsing basic info: data length is bigger than 112")
-            );
+            report!(BlockError::BasicInfoError, "Error parsing basic info: data length is bigger than 112")
         }
 
         // parsing timestamp
@@ -164,10 +162,7 @@ impl TransactionToken{
                             transaction:Transaction) 
                             -> Result<(), BlockError>{
         if !self.is_empty(){
-            return Err(
-                Report::new(BlockError::TransactionTokenError)
-                .attach_printable("Error setting transaction in TransactionToken: transaction already set")
-            );
+            report!(BlockError::TransactionTokenError, "Error setting transaction in TransactionToken: transaction already set")
         }
 
         self.transaction = Some(transaction);
@@ -177,10 +172,7 @@ impl TransactionToken{
     pub fn set_token(&mut self, token:Token::TokenAction) 
                             -> Result<(), BlockError>{
         if !self.is_empty(){
-            return Err(
-                Report::new(BlockError::TransactionTokenError)
-                .attach_printable("Error setting token in TransactionToken: token already set")
-            );
+            report!(BlockError::TransactionTokenError, "Error setting token in TransactionToken: token already set")
         }
 
         self.token = Some(token);
@@ -214,8 +206,12 @@ impl TransactionToken{
     pub fn dump(&self) -> Result<Vec<u8>,BlockError>{
         if self.is_transaction(){
             return self.transaction.as_ref().unwrap().dump()
+            .attach_printable("Error dumping transaction token (transaction)")
+            .change_context(BlockError::TransactionTokenError);
         }else{
-            return self.token.as_ref().unwrap().dump();
+            return self.token.as_ref().unwrap().dump()
+            .attach_printable("Error dumping transaction token (token)")
+            .change_context(BlockError::TransactionTokenError);
         }
     }   
 }
@@ -255,10 +251,7 @@ impl TransactionBlock{
 
         let res = new_merkle_tree.add_objects(hashes);
         if !res{
-            return Err(
-                Report::new(BlockError::TransactionBlockError)
-                .attach_printable("Error building merkle tree")
-            );
+            report!(BlockError::TransactionBlockError, "Error building merkle tree")
         }
         self.merkle_tree = Some(new_merkle_tree);
         return Ok(());
@@ -323,10 +316,7 @@ impl TransactionBlock{
         // amount of transactions
         let amount_of_transactions:u16;
         if self.transactions.len() > 0xFFFF{
-            return Err(
-                Report::new(BlockError::TransactionBlockError)
-                .attach_printable("Error dumping transaction block: too many transactions")
-            );
+            report!(BlockError::TransactionBlockError, "Error dumping transaction block: too many transactions")
         }else{
             amount_of_transactions = self.transactions.len() as u16
         }
@@ -389,11 +379,10 @@ impl TransactionBlock{
 
             if trtk_type == Headers::Transaction as u8{
                 // if transaction
-                //TODO
                 let transaction = Transaction::parse_transaction(
-                    &data[offset..offset+(transaction_size as usize)],transaction_size as u64);
+                    &data[offset..offset+(transaction_size as usize)],transaction_size as u64)
                     .attach_printable("Error parsing transaction block: couldn't parse transaction")
-                    .change_context(BlockError::TransactionBlock)
+                    .change_context(BlockError::TransactionBlockError)?;
                 
                 trtk.set_transaction(transaction)
                 .attach_printable("Error parsing transaction block: couldn't set transaction")
@@ -403,19 +392,16 @@ impl TransactionBlock{
                 // if token action
                 //TODO
                 let token = Token::TokenAction::parse(
-                    &data[offset..offset+(transaction_size as usize)],transaction_size as u64);
+                    &data[offset..offset+(transaction_size as usize)],transaction_size as u64)
                     .attach_printable("Error parsing transaction block: couldn't parse token")
-                    .change_context(BlockError::TransactionBlock)
+                    .change_context(BlockError::TransactionBlockError)?;
                 
 
                 trtk.set_token(token)
                 .attach_printable("Error parsing transaction block: couldn't set token")
                 .change_context(BlockError::TransactionBlockError)?;
             }else{
-                return Err(
-                    Report::new(BlockError::TransactionBlockError)
-                    .attach_printable("Error parsing transaction block: type doesn't exist")
-                );
+                report!(BlockError::TransactionBlockError, "Error parsing transaction block: type doesn't exist")
             }
             offset += transaction_size as usize; // inc offset
             
@@ -423,10 +409,7 @@ impl TransactionBlock{
         }
 
         if offset != block_size as usize{
-            return Err(
-                Report::new(BlockError::TransactionBlockError)
-                .attach_printable("Error parsing transaction block: couldn0t parse block")
-            );
+            report!(BlockError::TransactionBlockError, "Error parsing transaction block: couldn0t parse block")
         }
 
         let transaction_block = TransactionBlock::new(transactions,
@@ -487,10 +470,9 @@ impl TokenBlock{
         let transaction_len:u32 = self.payment_transaction.get_dump_size() as u32;
         dump.extend(transaction_len.to_be_bytes().iter());
         
-        //TODO
-        let result = self.payment_transaction.dump();
-        .attach_printable("Error dumping transaction block: couldn't dump payment transaction");
-        .change_context(BlockError::TokenBlock)?;
+        let result = self.payment_transaction.dump()
+        .attach_printable("Error dumping transaction block: couldn't dump payment transaction")
+        .change_context(BlockError::TokenBlockError)?;
 
         dump.extend(result);
 
@@ -520,19 +502,14 @@ impl TokenBlock{
         offset += 4;
         
         if data[offset] != Headers::Transaction as u8{
-            return Err(
-                Report::new(BlockError::TokenBlockError)
-                .attach_printable("Error parsing token block: couldn't find transaction")
-            )
+            report!(BlockError::TokenBlockError, "Error parsing token block: couldn't find transaction")
         }
         offset += 1;
 
-        //TODO
         let transaction = Transaction::parse_transaction(&data[offset..offset+transaction_size as usize], (transaction_size-1) as u64)
-        .attach_printable("Error parsing token block: couldn't parse transaction");
+        .attach_printable("Error parsing token block: couldn't parse transaction")
         .change_context(BlockError::TokenBlockError)?;
 
-        let transaction = result.unwrap();
         offset += (transaction_size-1) as usize;
 
         // parsing basic info 
@@ -543,9 +520,8 @@ impl TokenBlock{
         offset += default_info.get_dump_size();
 
         if offset != block_size as usize{
-            return Err("Error parsing token block");
+            report!(BlockError::TokenBlockError, "Error parsing token block (offset != block size)")
         }
-
 
         return Ok(TokenBlock{default_info:default_info,
                             token_signature:token_signature,
@@ -606,11 +582,7 @@ impl SummarizeBlock{
 
     pub fn parse(data:&[u8]) -> Result<SummarizeBlock, BlockError>{
         if data.len() <= 8{
-            return Err(
-                Report::new(BlockError::SumTransactionBlockError)
-                .attach_printable("Error parsing summarize block: not enough data")
-                .change_context(BlockError::SummarizeBlockError)
-            );
+            report!(BlockError::SummarizeBlockError, "Error parsing summarize block: not enough data")
         }
         let mut offset:usize = 0;
         
@@ -618,16 +590,10 @@ impl SummarizeBlock{
         let transaction_size:usize = u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize - 1;
         offset += 8;
         if data.len()<transaction_size+8{
-            return Err(
-                Report::new(BlockError::SummarizeBlockError)
-                .attach_printable("Error parsing summarize block: data length < tx size (+8)")
-            );
+            report!(BlockError::SummarizeBlockError, "Error parsing summarize block: data length < tx size (+8)")
         }
         if data[offset] != Headers::Transaction as u8{
-            return Err(
-                Report::new(BlockError::SummarizeBlockError)
-                .attach_printable("Error parsing summarize block: couldn't find headers")
-            );
+            report!(BlockError::SummarizeBlockError,"Error parsing summarize block: couldn't find headers")
         }
         offset += 1;
 

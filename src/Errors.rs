@@ -16,6 +16,16 @@ macro_rules! root_errors {
     };
 }
 
+#[macro_export]
+macro_rules! report {
+    ($ctx:expr, $msg:expr) => {
+        return Err(
+            Report::new($ctx)
+            .attach_printable($msg)
+        );
+    };
+}
+
 root_errors![
     
     BlockError : "Error ocurred while operating with a block" {
@@ -31,6 +41,14 @@ root_errors![
         VerifyError,
         DumpError,
         ParseError
+    },
+
+    TokenError: "Error ocurred while operating on a token or token action" {
+        CreationError,
+        DecodeError,
+        VerifyError,
+        DumpError,
+        NotImplementedYet
     },
 
     ToolsError : "Error ocurred while calling a tool function" {

@@ -9,17 +9,14 @@ use std::path::Path;
 use std::io::Read;
 use crate::Errors::ToolsError;
 use error_stack::{Report, IntoReport, Result, ResultExt};
-
+use crate::report;
 
 pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(), ToolsError>{
     let number_bytes:Vec<u8> = number.to_bytes_le();
 
     let amount_of_bunches:usize = number_bytes.len();
     if amount_of_bunches>255{
-        return Err(
-            Report::new(ToolsError::BiguintError)
-            .attach_printable("Error dumping biguint: amount of bunches bigger than 255")
-        );
+        report!(ToolsError::BiguintError, "Error dumping biguint: amount of bunches bigger than 255")
     }
 
     buffer.push(amount_of_bunches as u8);
@@ -37,10 +34,7 @@ pub fn load_biguint(data:&[u8]) -> Result<(BigUint,usize), ToolsError>{
     let amount_of_bunches:u8 = data[0];
     let amount_of_bytes:usize = amount_of_bunches as usize;//*4;
     if data.len()<amount_of_bytes{
-        return Err(
-            Report::new(ToolsError::BiguintError)
-            .attach_printable(format!("Error loading biguint: wrong amount of data (length is {}, amount of bytes is {})", data.len(), amount_of_bytes))
-        );
+        report!(ToolsError::BiguintError, format!("Error loading biguint: wrong amount of data (length is {}, amount of bytes is {})", data.len(), amount_of_bytes))
     }
 
     let amount:BigUint = BigUint::from_bytes_be(&data[1..1+amount_of_bytes]);
