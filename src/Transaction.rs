@@ -2,8 +2,8 @@ use sha2::{Sha256, Digest};
 use num_bigint::BigUint;
 use std::convert::TryInto;
 use std::mem::transmute_copy;
-use crate::Errors::TransactionError;
-use crate::{Tools, report};
+use crate::Errors::{TransactionError, VerifyTransactionErrorKind, ParseTransactionErrorKind, DumpTransactionErrorKind};
+use crate::Tools;
 
 use secp256k1::{Secp256k1, Message, SecretKey};
 use secp256k1::PublicKey;
@@ -115,8 +115,7 @@ impl Transaction{
         // load sender
         let sender = PublicKey::from_slice(&self.sender)
         .report()
-        .attach_printable("Error verifying transaction: couldn't load sender")
-        .change_context(TransactionError::VerifyError)?;
+        .change_context(TransactionError::VerifyError(VerifyTransactionErrorKind::VerifySenderError))?;
 
         // creating verifier
         let verifier = Secp256k1::verification_only();
@@ -124,15 +123,13 @@ impl Transaction{
         // load message
         let message = Message::from_slice(Box::leak(signed_data_hash))
         .report()
-        .attach_printable("Error verifying transaction: couldn't load message")
-        .change_context(TransactionError::VerifyError)?;
+        .change_context(TransactionError::VerifyError(VerifyTransactionErrorKind::VerifyMessageError))?;
         
 
         // load signature
         let signature = Signature::from_compact(&self.signature)
         .report()
-        .attach_printable("Error verifying transaction: couldn't load signature")
-        .change_context(TransactionError::VerifyError)?;
+        .change_context(TransactionError::VerifyError(VerifyTransactionErrorKind::VerifySignatureError))?;
 
         // verifying hashed data with public key
         let result = verifier.verify_ecdsa(&message,
@@ -176,8 +173,7 @@ impl Transaction{
         
         // amount
         Tools::dump_biguint(&self.amount, &mut transaction_dump)
-        .attach_printable("Error dumping transaction: couldn't load amount")
-        .change_context(TransactionError::DumpError)?;
+        .change_context(TransactionError::DumpError(DumpTransactionErrorKind::DumpAmountError))?;
         
         return Ok(transaction_dump);
     }
@@ -196,7 +192,9 @@ impl Transaction{
         let mut index:usize = 0;
 
         if data.len() <= 138{
-            report!(TransactionError::ParseError, "Bad transaction size")
+            return Err(
+                Report::new(TransactionError::ParseError(ParseTransactionErrorKind::BadSizeError))
+            );
         }
 
         // parsing sender address
@@ -219,11 +217,13 @@ impl Transaction{
         // parsing amount
         let (amount, idx) = Tools::load_biguint(&data[index..])
         .attach_printable("Error parsing transaction: couldn't parse amount")
-        .change_context(TransactionError::ParseError)?;
+        .change_context(TransactionError::ParseError(ParseTransactionErrorKind::ParseAmountError))?;
 
         index += idx;
         if index != transaction_size as usize {
-            report!(TransactionError::ParseError, "Error parsing transaction")
+            return Err(
+                Report::new(TransactionError::ParseError(ParseTransactionErrorKind::InvalidTransactionError))
+            );
         }
 
         let transaction:Transaction = Transaction::new(
