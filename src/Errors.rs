@@ -71,6 +71,9 @@ root_errors![
         ParseError(ParseTransactionErrorKind)
     },
 
+    MerkleTreeError : "Error ocurred while operating on the merkel tree" {
+        NoHashFoundError(NoHashFoundErrorKind)
+    },
     // TokenError: "Error ocurred while operating on a token or token action" {
     //     TokenCreationError(TokenCreationErrorKind),
     //     DecodeError(DecodeErrorKind),
@@ -114,9 +117,6 @@ sub_errors![
         VerifyMessageError : "failed to load/verify message",
         VerifySignatureError : "failed to load/verify signature"
     },
-    // DecodeErrorKind {
-
-    // },
     ParseTransactionErrorKind {
         ParseAmountError : "failed to load amount",
         BadSizeError : "failed to parse due to an invalid size (<= 138)",
@@ -138,6 +138,11 @@ sub_errors![
         DecoderCreationError : "failed to create decoder",
         EncodingError : "failed to encode data",
         ClosingFileError : "failed to close file"
+    },
+
+    
+    NoHashFoundErrorKind {
+        NoHashFoundError : "no such hash found"
     },
 
 

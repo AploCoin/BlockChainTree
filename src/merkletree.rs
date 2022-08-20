@@ -1,5 +1,8 @@
+use error_stack::{Result, Report};
 use sha2::{Sha256, Digest};
 use std::convert::TryInto;
+
+use crate::Errors::{NoHashFoundErrorKind, MerkleTreeError};
 
 
 static PADDING_HASH:[u8;32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\
@@ -139,11 +142,14 @@ impl MerkleTree{
         return None;
     }
 
-    pub fn get_proof<'a>(&'a self, hash:&[u8;32]) -> Result<Vec<&'a [u8;32]>,&'static str>{
+    pub fn get_proof<'a>(&'a self, hash:&[u8;32]) -> Result<Vec<&'a [u8;32]>, MerkleTreeError>{
 
         let starting_node_res = self.exists(hash);
         if starting_node_res.is_none(){
-            return Err("No such hash found");
+            return Err(
+                Report::new(MerkleTreeError::NoHashFoundError(NoHashFoundErrorKind::NoHashFoundError))
+                .attach_printable(format!("hash: {:?} // {}", hash, std::str::from_utf8(hash).unwrap()))
+            );
         }
 
         let mut starting_node:usize = starting_node_res.unwrap();
