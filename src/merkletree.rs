@@ -2,7 +2,7 @@ use error_stack::{Result, Report};
 use sha2::{Sha256, Digest};
 use std::convert::TryInto;
 
-use crate::Errors::{NoHashFoundErrorKind, MerkleTreeError};
+use crate::Errors::*;
 
 
 static PADDING_HASH:[u8;32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\
@@ -147,8 +147,8 @@ impl MerkleTree{
         let starting_node_res = self.exists(hash);
         if starting_node_res.is_none(){
             return Err(
-                Report::new(MerkleTreeError::NoHashFoundError(NoHashFoundErrorKind::NoHashFoundError))
-                .attach_printable(format!("hash: {:?} // {}", hash, std::str::from_utf8(hash).unwrap()))
+                Report::new(MerkleTreeError::TreeError(MerkleTreeErrorKind::GettingProofError))
+                .attach_printable(format!("hash: {:?} // {} doesn't exist", hash, std::str::from_utf8(hash).unwrap()))
             );
         }
 

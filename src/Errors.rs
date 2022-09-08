@@ -2,6 +2,8 @@
 use thiserror::Error;
 use colored::Colorize;
 
+use crate::Block::SummarizeBlock;
+
 macro_rules! root_errors {
     [$(
         $errname:ident : $msg:literal {
@@ -66,23 +68,67 @@ root_errors![
 
     TransactionError : "Error ocurred while operating on a transaction" {
         TxError(TxErrorKind)
+    },
+
+    MerkleTreeError : "Error ocurred while operating on the merkletree" {
+        TreeError(MerkleTreeErrorKind)
+    },
+
+    BlockError : "Error ocurred while operating on a block" {
+        BasicInfoError(BasicInfoErrorKind),
+        TransactionTokenError(TxTokenErrorKind),
+        TransactionBlockError(TxBlockErrorKind),
+        TokenBlockError(TokenBlockErrorKind),
+        SummarizeBlockError(SummarizeBlockErrorKind)
     }
 ];
+
 
 sub_errors![
     BiguintErrorKind {
         DumpError : "failed to dump biguint, amount of bunches larger than 255",
         LoadError : "failed to load biguint (data length < bytes)"
     },
-
     ZstdErrorKind {
         CompressingFileError : "failed to compress file with zstd",
         DecompressingFileError : "failed to decompress file with zstd"
     },
 
+
     TxErrorKind {
         VerifyError : "failed to verify transaction",
         DumpError : "failed to dump transaction (amount)",
         ParseError : "failed to parse transaction"
+    },
+
+
+    MerkleTreeErrorKind {
+        GettingProofError : "failed to get proof"
+    },
+
+
+    BasicInfoErrorKind {
+        DumpError : "failed to dump basic info",
+        ParseError : "failed to parse basic info"
+    },
+    TxTokenErrorKind {
+        SettingTxError : "failed to set transaction (already set)",
+        SettingTokenError : "failed to set token (already set)",
+        DumpError : "failed to dump (token or transaction)"
+
+    },
+    TxBlockErrorKind {
+        BuildingMerkleTreeError : "failed to build merkle tree",
+        DumpError : "failed to dump",
+        ParseError : "failed to parse"
+    },
+    TokenBlockErrorKind {
+        DumpError : "failed to dump",
+        ParseError : "failed to parse"
+    },
+    SummarizeBlockErrorKind {
+        DumpError : "failed to dump",
+        ParseError : "failed to parse",
+        HashError : "failed to hash (couldn't dump)"
     }
 ];
