@@ -7,7 +7,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 use std::io::Read;
-use crate::Errors::{ToolsError, BiguintErrorKind, ZstdErrorKind};
+use crate::Errors::*;
 use error_stack::{Report, IntoReport, Result, ResultExt};
 
 pub fn dump_biguint(number:&BigUint,buffer:&mut Vec<u8>)->Result<(), ToolsError>{
@@ -37,7 +37,7 @@ pub fn load_biguint(data:&[u8]) -> Result<(BigUint,usize), ToolsError>{
     if data.len()<amount_of_bytes{
         return Err(
             Report::new(ToolsError::BiguintError(BiguintErrorKind::LoadError))
-            .attach_printable(format!("data ({}) < amount of bunches ({})", data.len(), amount_of_bytes))
+            .attach_printable(format!("data = {} // bytes = {}", data.len(), amount_of_bytes))
         )
     }
 
@@ -68,21 +68,20 @@ pub fn compress_to_file(output_file:String,data:&[u8])->Result<(), ToolsError>{
     let path = Path::new(&output_file);
     let target = File::create(path)
     .report()
-    .change_context(ToolsError::ZstdError(ZstdErrorKind::CreatingFileError))
-    .attach_printable(format!("path: {}", path.display()))?;
+    .change_context(ToolsError::ZstdError(ZstdErrorKind::CompressingFileError))?;
     
 
     let encoder = zstd::Encoder::new(target,1)
     .report()
-    .change_context(ToolsError::ZstdError(ZstdErrorKind::EncoderCreationError))?;
+    .change_context(ToolsError::ZstdError(ZstdErrorKind::CompressingFileError))?;
     
     encoder.write_all(data)
     .report()
-    .change_context(ToolsError::ZstdError(ZstdErrorKind::EncodingError))?;
+    .change_context(ToolsError::ZstdError(ZstdErrorKind::CompressingFileError))?;
 
     encoder.finish()
     .report()
-    .change_context(ToolsError::ZstdError(ZstdErrorKind::ClosingFileError))?;
+    .change_context(ToolsError::ZstdError(ZstdErrorKind::CompressingFileError))?;
 
     return Ok(());
 }
@@ -94,18 +93,18 @@ pub fn decompress_from_file(filename:String) -> Result<Vec<u8>, ToolsError>{
     let file = File::open(path)
     .report()
     .attach_printable("Error opening file")
-    .change_context(ToolsError::ZstdError(ZstdErrorKind::CreatingFileError))?;
+    .change_context(ToolsError::ZstdError(ZstdErrorKind::DecompressingFileError))?;
     
     
     let mut decoder = zstd::Decoder::new(file)
     .report()
     .attach_printable("Error creating decoder")
-    .change_context(ToolsError::ZstdError(ZstdErrorKind::DecoderCreationError))?;
+    .change_context(ToolsError::ZstdError(ZstdErrorKind::DecompressingFileError))?;
 
     let result = decoder.read_to_end(&mut decoded_data)
     .report()
     .attach_printable("Error reading file")
-    .change_context(ToolsError::ZstdError(ZstdErrorKind::ReadingFileError));
+    .change_context(ToolsError::ZstdError(ZstdErrorKind::DecompressingFileError));
 
     return Ok(decoded_data);
 }

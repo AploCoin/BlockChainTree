@@ -2,7 +2,7 @@ use sha2::{Sha256, Digest};
 use num_bigint::BigUint;
 use std::convert::TryInto;
 use std::mem::transmute_copy;
-use crate::Errors::{TransactionError, VerifyTransactionErrorKind, ParseTransactionErrorKind, DumpTransactionErrorKind};
+use crate::Errors::*;
 use crate::Tools;
 
 use secp256k1::{Secp256k1, Message, SecretKey};
@@ -115,7 +115,7 @@ impl Transaction{
         // load sender
         let sender = PublicKey::from_slice(&self.sender)
         .report()
-        .change_context(TransactionError::VerifyError(VerifyTransactionErrorKind::VerifySenderError))?;
+        .change_context(TransactionError::TxError(TxErrorKind::VerifyError))?;
 
         // creating verifier
         let verifier = Secp256k1::verification_only();
@@ -123,13 +123,13 @@ impl Transaction{
         // load message
         let message = Message::from_slice(Box::leak(signed_data_hash))
         .report()
-        .change_context(TransactionError::VerifyError(VerifyTransactionErrorKind::VerifyMessageError))?;
+        .change_context(TransactionError::TxError(TxErrorKind::VerifyError))?;
         
 
         // load signature
         let signature = Signature::from_compact(&self.signature)
         .report()
-        .change_context(TransactionError::VerifyError(VerifyTransactionErrorKind::VerifySignatureError))?;
+        .change_context(TransactionError::TxError(TxErrorKind::VerifyError))?;
 
         // verifying hashed data with public key
         let result = verifier.verify_ecdsa(&message,
@@ -173,7 +173,7 @@ impl Transaction{
         
         // amount
         Tools::dump_biguint(&self.amount, &mut transaction_dump)
-        .change_context(TransactionError::DumpError(DumpTransactionErrorKind::DumpAmountError))?;
+        .change_context(TransactionError::TxError(TxErrorKind::DumpError))?;
         
         return Ok(transaction_dump);
     }
@@ -193,7 +193,8 @@ impl Transaction{
 
         if data.len() <= 138{
             return Err(
-                Report::new(TransactionError::ParseError(ParseTransactionErrorKind::BadSizeError))
+                Report::new(TransactionError::TxError(TxErrorKind::ParseError))
+                .attach_printable("Data length <= 138")
             );
         }
 
@@ -216,13 +217,14 @@ impl Transaction{
 
         // parsing amount
         let (amount, idx) = Tools::load_biguint(&data[index..])
-        .attach_printable("Error parsing transaction: couldn't parse amount")
-        .change_context(TransactionError::ParseError(ParseTransactionErrorKind::ParseAmountError))?;
+        .attach_printable("Couldn't parse amount")
+        .change_context(TransactionError::TxError(TxErrorKind::ParseError))?;
 
         index += idx;
         if index != transaction_size as usize {
             return Err(
-                Report::new(TransactionError::ParseError(ParseTransactionErrorKind::InvalidTransactionError))
+                Report::new(TransactionError::TxError(TxErrorKind::ParseError))
+                .attach_printable("Index != Tx size")
             );
         }
 

@@ -28,24 +28,28 @@ use hex::ToHex;
 use num_traits::Zero;
 use crate::DumpHeaders::Headers;
 
-static BLOCKCHAIN_DIRECTORY:&'static str = "./BlockChainTree/";
 
-static AMMOUNT_SUMMARY:&'static str = "./BlockChainTree/SUMMARY/";
-static OLD_AMMOUNT_SUMMARY:&'static str = "./BlockChainTree/SUMMARYOLD/";
+use error_stack::{Report, Result, ResultExt, IntoReport};
+use crate::Errors::*;
 
-static MAIN_CHAIN_DIRECTORY:&'static str = "./BlockChainTree/MAIN/";
+static BLOCKCHAIN_DIRECTORY: &'static str = "./BlockChainTree/";
+
+static AMMOUNT_SUMMARY: &'static str = "./BlockChainTree/SUMMARY/";
+static OLD_AMMOUNT_SUMMARY: &'static str = "./BlockChainTree/SUMMARYOLD/";
+
+static MAIN_CHAIN_DIRECTORY: &'static str = "./BlockChainTree/MAIN/";
 
 
-static DERIVATIVE_CHAINS_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVES/";
-static CHAINS_FOLDER:&'static str = "CHAINS/";
-//static DERIVATIVE_DB_DIRECTORY:&'static str = "./BlockChainTree/DERIVATIVE/DB/";
+static DERIVATIVE_CHAINS_DIRECTORY: &'static str = "./BlockChainTree/DERIVATIVES/";
+static CHAINS_FOLDER: &'static str = "CHAINS/";
+//static DERIVATIVE_DB_DIRECTORY: BlockChainTreeError = "./BlockChainTree/DERIVATIVE/DB/";
 
-static BLOCKS_FOLDER:&'static str = "BLOCKS/";
-static REFERENCES_FOLDER:&'static str = "REF/";
+static BLOCKS_FOLDER: &'static str = "BLOCKS/";
+static REFERENCES_FOLDER: &'static str = "REF/";
 
-static CONFIG_FILE:&'static str = "Chain.config";
-static LOOKUP_TABLE_FILE:&'static str = "LookUpTable.dat";
-static TRANSACTIONS_POOL:&'static str = "TRXS_POOL.pool"; 
+static CONFIG_FILE: &'static str = "Chain.config";
+static LOOKUP_TABLE_FILE: &'static str = "LookUpTable.dat";
+static TRANSACTIONS_POOL: &'static str = "TRXS_POOL.pool"; 
 static GENESIS_BLOCK:[u8;32] = [0x77,0xe6,0xd9,0x52,
                                 0x67,0x57,0x8e,0x85,
                                 0x39,0xa9,0xcf,0xe0,
@@ -77,7 +81,7 @@ pub struct Chain{
 }
 
 impl Chain{
-    pub fn new() -> Result<Chain,&'static str>{
+    pub fn new() -> Result<Chain, BlockChainTreeError>{
         let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
@@ -88,49 +92,40 @@ impl Chain{
         let path_height = Path::new(&path_height_st);
 
         // open blocks DB
-        let result = DB::<MultiThreaded>::open_default(
-                                            path_blocks);
-        if result.is_err(){
-            return Err("Error opening blocks db");
-        }
-        let db = result.unwrap();
+        let db = DB::<MultiThreaded>::open_default(path_blocks)
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::OpeningBlocksDbError))?;
 
         // open height references DB
-        let result = DB::<MultiThreaded>::open_default(
-                                            path_reference);
-        if result.is_err(){
-            return Err("Error opening references db");
-        }
-        let references = result.unwrap();
+        let references = DB::<MultiThreaded>::open_default(path_reference)
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::OpeningReferencesDbError))?;
         
         
-        let result = File::open(path_height);
-        if result.is_err(){
-            return Err("Could not open config");
-        }
-        let mut file = result.unwrap();
+        let mut file = File::open(path_height)
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::OpeningConfigError))?;
 
         // read height from config
         let mut height_bytes:[u8;8] = [0;8];
-        let result = file.read_exact(&mut height_bytes);
-        if result.is_err(){
-            return Err("Error reading config");
-        }
+
+        file.read_exact(&mut height_bytes)
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::ReadingConfigError))?;
+
         let height:u64 = u64::from_be_bytes(height_bytes);
 
         // read genesis hash
         let mut genesis_hash:[u8;32] = [0;32];
-        let result = file.read_exact(&mut genesis_hash);
-        if result.is_err(){
-            return Err("Error reading genesis hash from config");
-        }
+        file.read_exact(&mut genesis_hash)
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::ReadingGenesisHashError));
 
         // read difficulty
         let mut difficulty:[u8;32] = [0;32];
-        let result = file.read_exact(&mut difficulty);
-        if result.is_err(){
-            return Err("Error reading diffculty from config");
-        }
+        file.read_exact(&mut difficulty)
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::ReadingDifficultyError));
 
         return Ok(Chain{db:db,
                 height_reference:references,
@@ -140,27 +135,22 @@ impl Chain{
     }
 
     pub fn add_block(&mut self,
-                    block:&SumTransactionBlock) -> Result<(),&'static str>{
+                    block:&SumTransactionBlock) -> Result<(), BlockChainTreeError>{
 
-        let result = block.dump();
-        if result.is_err(){
-            return Err(result.err().unwrap());
-        }
-        let dump = result.unwrap();
+        let dump = block.dump()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::DumpingBlockError))?;
 
         let hash = Tools::hash(&dump);
 
 
-        let result = self.db.put(hash,dump);
-        if result.is_err(){
-            return Err("Error adding block");
-        }
+        self.db.put(hash,dump)
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::AddingBlockError))?;
 
-        let result = self.height_reference.put(hash,
-                                                    self.height.to_be_bytes());
-        if result.is_err(){
-            return Err("Error adding reference");
-        }
+        self.height_reference.put(hash,self.height.to_be_bytes())
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::AddingReferenceError));
+
 
         self.height += 1;
 
@@ -175,19 +165,17 @@ impl Chain{
         return self.difficulty;
     }
 
-    pub fn find_by_height(&self,height:u64) -> Result<Option<SumTransactionBlock>,&'static str>{
+    pub fn find_by_height(&self,height:u64) -> Result<Option<SumTransactionBlock>, BlockChainTreeError>{
         if height > self.height{
             return Ok(None);
         }
-        let result = self.db.get(height.to_be_bytes());
-        if result.is_err(){
-            return Err("Error reading block");
-        }
-        let result = result.unwrap();
-        if result.is_none(){
+        let dump = self.db.get(height.to_be_bytes())
+        .report()
+        .change_context(BlockChainTreeError::ChainError(ChainErrorKind::ReadingBlockError))?;
+        
+        if dump.is_none(){
             return Ok(None);
         }
-        let dump = result.unwrap();
 
         if dump[0] == Headers::TransactionBlock as u8{
             let result = TransactionBlock::parse(&dump[1..],
@@ -212,7 +200,7 @@ impl Chain{
         return Err("Block type not found");
     }
 
-    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<SumTransactionBlock>,&'static str>{
+    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<SumTransactionBlock>, BlockChainTreeError>{
         let result = self.height_reference.get(hash);
         if result.is_err(){
             return Err("Error getting height");
@@ -233,7 +221,7 @@ impl Chain{
 
     }
 
-    pub fn dump_config(&self) -> Result<(),&'static str>{
+    pub fn dump_config(&self) -> Result<(), BlockChainTreeError>{
         let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_config = root+CONFIG_FILE;
 
@@ -263,7 +251,7 @@ impl Chain{
     }
 
     pub fn new_without_config(root_path:&str,
-                            genesis_hash:&[u8;32]) -> Result<Chain,&'static str>{
+                            genesis_hash:&[u8;32]) -> Result<Chain, BlockChainTreeError>{
         let root = String::from(root_path);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
@@ -294,7 +282,7 @@ impl Chain{
                         difficulty:BEGINNING_DIFFICULTY});
     }
 
-    pub fn get_last_block(&self) -> Result<Option<SumTransactionBlock>,&'static str>{
+    pub fn get_last_block(&self) -> Result<Option<SumTransactionBlock>, BlockChainTreeError>{
         return self.find_by_height(self.height-1);
     }
 
@@ -310,7 +298,7 @@ pub struct DerivativeChain{
 }
 
 impl DerivativeChain{
-    pub fn new(root_path:&str) -> Result<DerivativeChain,&'static str>{
+    pub fn new(root_path:&str) -> Result<DerivativeChain, BlockChainTreeError>{
         let root = String::from(root_path);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
@@ -382,7 +370,7 @@ impl DerivativeChain{
     }
 
     pub fn add_block(&mut self,
-                    block:&TokenBlock) -> Result<(),&'static str>{
+                    block:&TokenBlock) -> Result<(), BlockChainTreeError>{
 
         let result = block.dump();
         if result.is_err(){
@@ -422,7 +410,7 @@ impl DerivativeChain{
         return self.global_height;
     }
 
-    pub fn find_by_height(&self,height:u64) -> Result<Option<TokenBlock>,&'static str>{
+    pub fn find_by_height(&self,height:u64) -> Result<Option<TokenBlock>, BlockChainTreeError>{
         if height > self.height{
             return Ok(None);
         }
@@ -448,7 +436,7 @@ impl DerivativeChain{
 
     }
 
-    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<TokenBlock>,&'static str>{
+    pub fn find_by_hash(&self,hash:&[u8;32]) -> Result<Option<TokenBlock>, BlockChainTreeError>{
         let result = self.height_reference.get(hash);
         if result.is_err(){
             return Err("Error getting height");
@@ -469,7 +457,7 @@ impl DerivativeChain{
 
     }
 
-    pub fn dump_config(&self, root_path:&str) -> Result<(),&'static str>{
+    pub fn dump_config(&self, root_path:&str) -> Result<(), BlockChainTreeError>{
         let root = String::from(root_path);
         let path_config = root+CONFIG_FILE;
 
@@ -506,7 +494,7 @@ impl DerivativeChain{
 
     pub fn without_config(root_path:&str,
                             genesis_hash:&[u8;32],
-                            global_height:u64) -> Result<DerivativeChain,&'static str>{
+                            global_height:u64) -> Result<DerivativeChain, BlockChainTreeError>{
         let root = String::from(root_path);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
@@ -538,7 +526,7 @@ impl DerivativeChain{
                         global_height:global_height});
     }
 
-    pub fn get_last_block(&self) -> Result<Option<TokenBlock>,&'static str>{
+    pub fn get_last_block(&self) -> Result<Option<TokenBlock>, BlockChainTreeError>{
         return self.find_by_height(self.height-1);
     }
 
@@ -554,7 +542,7 @@ pub struct BlockChainTree{
 
 
 impl BlockChainTree{
-    pub fn with_config() -> Result<BlockChainTree,&'static str>{
+    pub fn with_config() -> Result<BlockChainTree, BlockChainTreeError>{
         let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
 
         // open summary db
@@ -644,7 +632,7 @@ impl BlockChainTree{
                                 old_summary_db:Some(old_summary_db)});
     }
 
-    pub fn without_config() -> Result<BlockChainTree,&'static str>{
+    pub fn without_config() -> Result<BlockChainTree, BlockChainTreeError>{
         let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
 
         // open summary db
@@ -682,7 +670,7 @@ impl BlockChainTree{
                                 old_summary_db:Some(old_summary_db)});
     }
 
-    pub fn dump_pool(&self) -> Result<(),&'static str>{
+    pub fn dump_pool(&self) -> Result<(), BlockChainTreeError>{
 
         let pool_path = String::from(BLOCKCHAIN_DIRECTORY)
                         +TRANSACTIONS_POOL;
@@ -720,13 +708,13 @@ impl BlockChainTree{
             let result = file.write_all(&dump);
             if result.is_err(){
                 return Err("Error writing transaction dump");
-            }
+            }        .attach_printable("Error hashing summarize block: couldn't dump")
         }
 
         return Ok(());
     }
 
-    pub fn get_derivative_chain(&mut self, addr:&[u8;33]) -> Result<Option<Box<DerivativeChain>>,&'static str>{
+    pub fn get_derivative_chain(&mut self, addr:&[u8;33]) -> Result<Option<Box<DerivativeChain>>, BlockChainTreeError>{
         let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr:String = addr.encode_hex::<String>();
         path_string += &hex_addr;
@@ -752,7 +740,7 @@ impl BlockChainTree{
 
     pub fn create_derivative_chain(addr:&[u8;33],
                                     genesis_hash:&[u8;32],
-                                    global_height:u64) -> Result<DerivativeChain,&'static str>{
+                                    global_height:u64) -> Result<DerivativeChain, BlockChainTreeError>{
 
         let mut root_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr:String = addr.encode_hex::<String>();
@@ -792,7 +780,7 @@ impl BlockChainTree{
         
     }
 
-    pub fn check_main_folders() -> Result<(),&'static str>{
+    pub fn check_main_folders() -> Result<(), BlockChainTreeError>{
 
         let root = Path::new(BLOCKCHAIN_DIRECTORY);
         if !root.exists(){
@@ -870,7 +858,7 @@ impl BlockChainTree{
 
     // summary data bases functions
 
-    pub fn add_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(),&'static str>{
+    pub fn add_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(), BlockChainTreeError>{
 
         let result = self.summary_db.as_mut().unwrap().get(addr);
         match result{
@@ -914,7 +902,7 @@ impl BlockChainTree{
         }
     }
 
-    pub fn decrease_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(),&'static str>{
+    pub fn decrease_funds(&mut self,addr:&[u8;33],funds:&BigUint) -> Result<(), BlockChainTreeError>{
 
         let result = self.summary_db.as_mut().unwrap().get(addr);
         match result{
@@ -951,7 +939,7 @@ impl BlockChainTree{
         }
     }
 
-    pub fn get_funds(&mut self,addr:&[u8;33]) -> Result<BigUint,&'static str>{
+    pub fn get_funds(&mut self,addr:&[u8;33]) -> Result<BigUint, BlockChainTreeError>{
 
         let result = self.summary_db.as_mut().unwrap().get(addr);
         match result{
@@ -972,7 +960,7 @@ impl BlockChainTree{
         }
     }
 
-    pub fn get_old_funds(&mut self,addr:&[u8;33]) -> Result<BigUint,&'static str>{
+    pub fn get_old_funds(&mut self,addr:&[u8;33]) -> Result<BigUint, BlockChainTreeError>{
         let result = self.old_summary_db.as_mut().unwrap().get(addr);
         match result{
             Ok(None)  => {
@@ -992,7 +980,7 @@ impl BlockChainTree{
         }
     }
 
-    pub fn move_summary_database(&mut self) -> Result<(),&'static str>{
+    pub fn move_summary_database(&mut self) -> Result<(), BlockChainTreeError>{
         let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
         let sum_path = Path::new(AMMOUNT_SUMMARY);
         
@@ -1032,7 +1020,7 @@ impl BlockChainTree{
         return Ok(());
     }
 
-    pub fn new_transaction(&mut self,tr:TransactionToken) -> Result<(),&'static str>{
+    pub fn new_transaction(&mut self,tr:TransactionToken) -> Result<(), BlockChainTreeError>{
         if tr.is_transaction(){
             let transaction = tr.get_transaction().as_ref().unwrap();
             
@@ -1062,7 +1050,7 @@ impl BlockChainTree{
         return Err("Not implemented");
     }
 
-    pub fn pop_last_transactions(&mut self) -> Result<Option<Vec<TransactionToken>>,&'static str>{
+    pub fn pop_last_transactions(&mut self) -> Result<Option<Vec<TransactionToken>>, BlockChainTreeError>{
         
         if self.trxs_pool.is_empty(){
             return Ok(None);
