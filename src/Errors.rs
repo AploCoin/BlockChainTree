@@ -80,6 +80,12 @@ root_errors![
         TransactionBlockError(TxBlockErrorKind),
         TokenBlockError(TokenBlockErrorKind),
         SummarizeBlockError(SummarizeBlockErrorKind)
+    },
+
+    BlockChainTreeError : "Error ocurred while operating on the blockchain tree" {
+        ChainError(ChainErrorKind),
+        DerivativeChainError(DerivChainErrorKind),
+        BlockChainTreeError(BCTreeErrorKind)
     }
 ];
 
@@ -130,5 +136,38 @@ sub_errors![
         DumpError : "failed to dump",
         ParseError : "failed to parse",
         HashError : "failed to hash (couldn't dump)"
+    },
+
+
+    ChainErrorKind {
+        InitError : "failed to create a new chain",
+        AddingBlockError : "failed to add block",
+        FindByHeightError : "failed to find block by height",
+        FindByHashError : "failed to find by hash",
+        DumpConfigError : "failed to dump config",
+        InitWithoutConfigError : "failed to create a new chain without config"
+    },
+    DerivChainErrorKind {
+        InitError : "failed to create a new derivative chain",
+        AddingBlockError : "failed to add block",
+        FindByHeightError : "failed to find block by height",
+        FindByHashError : "failed to find by hash",
+        DumpConfigError : "failed to dump config",
+        InitWithoutConfigError : "failed to create a new chain without config"
+    },
+    BCTreeErrorKind {
+        InitError : "failed to init the blockchain tree (with config)",
+        InitWithoutConfigError : "failed to init the blockchain tree (with config)",
+        DumpPoolError : "failed to dump pool",
+        GetDerivChainError : "failed to get the derivative chain",
+        CreateDerivChainError : "failed to create the derivative chain",
+        CheckMainFoldersError : "failed to check and fix the main folders",
+        AddFundsError : "failed to add funds",
+        DecreaseFundsError : "failed to decrease funds",
+        GetFundsError : "failed to get funds",
+        GetOldFundsError : "failed to get funds from old summary db",
+        MoveSummaryDBError : "failed to move summary database",
+        NewTransactionError : "failed to create new transaction"
     }
+
 ];
