@@ -13,7 +13,7 @@ use crate::DumpHeaders::Headers;
 
 use error_stack::{Report, Result, ResultExt, IntoReport};
 
-trait Transaction {
+pub trait Transactionable {
     fn new(sender:&[u8;33],
         receiver:&[u8;33],
         timestamp:u64,
@@ -28,7 +28,7 @@ trait Transaction {
     fn dump(&self) -> Result<Vec<u8>, TransactionError>;
     fn get_dump_size(&self) -> usize;
 
-    fn parse_transaction(data:&[u8],transaction_size:u64) -> Result<Self, TransactionError>;
+    fn parse_transaction(data:&[u8],transaction_size:u64) -> Result<Self, TransactionError> where Self:Sized;
 
     fn get_sender(&self) -> &[u8;33];
     fn get_receiver(&self) -> &[u8;33];
