@@ -1,6 +1,5 @@
-
-use thiserror::Error;
 use colored::Colorize;
+use thiserror::Error;
 
 use crate::Block::SummarizeBlock;
 
@@ -13,7 +12,7 @@ macro_rules! root_errors {
                 $var:ident($nested:ident)
             ),*
         }
-        
+
     ),*] => {
         $(
             #[derive(Debug, Error)]
@@ -42,7 +41,7 @@ macro_rules! sub_errors {
                     #[error($msg)]
                     $var,
                 )*
-            }   
+            }
         )*
     }
 }
@@ -56,9 +55,6 @@ macro_rules! sub_errors {
 //         )
 //     };
 // }
-
-
-
 
 root_errors![
     ToolsError : "Error ocurred while using a tool function" {
@@ -89,85 +85,74 @@ root_errors![
     }
 ];
 
-
 sub_errors![
     BiguintErrorKind {
-        DumpError : "failed to dump biguint, amount of bunches larger than 255",
-        LoadError : "failed to load biguint (data length < bytes)"
+        DumpError: "failed to dump biguint, amount of bunches larger than 255",
+        LoadError: "failed to load biguint (data length < bytes)"
     },
     ZstdErrorKind {
-        CompressingFileError : "failed to compress file with zstd",
-        DecompressingFileError : "failed to decompress file with zstd"
+        CompressingFileError: "failed to compress file with zstd",
+        DecompressingFileError: "failed to decompress file with zstd"
     },
-
-
     TxErrorKind {
-        VerifyError : "failed to verify transaction",
-        DumpError : "failed to dump transaction (amount)",
-        ParseError : "failed to parse transaction"
+        VerifyError: "failed to verify transaction",
+        DumpError: "failed to dump transaction (amount)",
+        ParseError: "failed to parse transaction"
     },
-
-
     MerkleTreeErrorKind {
-        GettingProofError : "failed to get proof"
+        GettingProofError: "failed to get proof"
     },
-
-
     BasicInfoErrorKind {
-        DumpError : "failed to dump basic info",
-        ParseError : "failed to parse basic info"
+        DumpError: "failed to dump basic info",
+        ParseError: "failed to parse basic info"
     },
     TxTokenErrorKind {
-        SettingTxError : "failed to set transaction (already set)",
-        SettingTokenError : "failed to set token (already set)",
-        DumpError : "failed to dump (token or transaction)"
-
+        SettingTxError: "failed to set transaction (already set)",
+        SettingTokenError: "failed to set token (already set)",
+        DumpError: "failed to dump (token or transaction)"
     },
     TxBlockErrorKind {
-        BuildingMerkleTreeError : "failed to build merkle tree",
-        DumpError : "failed to dump",
-        ParseError : "failed to parse"
+        BuildingMerkleTreeError: "failed to build merkle tree",
+        DumpError: "failed to dump",
+        ParseError: "failed to parse"
     },
     TokenBlockErrorKind {
-        DumpError : "failed to dump",
-        ParseError : "failed to parse"
+        DumpError: "failed to dump",
+        ParseError: "failed to parse"
     },
     SummarizeBlockErrorKind {
-        DumpError : "failed to dump",
-        ParseError : "failed to parse",
-        HashError : "failed to hash (couldn't dump)"
+        DumpError: "failed to dump",
+        ParseError: "failed to parse",
+        HashError: "failed to hash (couldn't dump)"
     },
-
-
     ChainErrorKind {
-        InitError : "failed to create a new chain",
-        AddingBlockError : "failed to add block",
-        FindByHeightError : "failed to find block by height",
-        FindByHashError : "failed to find by hash",
-        DumpConfigError : "failed to dump config",
-        InitWithoutConfigError : "failed to create a new chain without config"
+        InitError: "failed to create a new chain",
+        AddingBlockError: "failed to add block",
+        FindByHeightError: "failed to find block by height",
+        FindByHashError: "failed to find by hash",
+        DumpConfigError: "failed to dump config",
+        InitWithoutConfigError: "failed to create a new chain without config"
     },
     DerivChainErrorKind {
-        InitError : "failed to create a new derivative chain",
-        AddingBlockError : "failed to add block",
-        FindByHeightError : "failed to find block by height",
-        FindByHashError : "failed to find by hash",
-        DumpConfigError : "failed to dump config",
-        InitWithoutConfigError : "failed to create a new chain without config"
+        InitError: "failed to create a new derivative chain",
+        AddingBlockError: "failed to add block",
+        FindByHeightError: "failed to find block by height",
+        FindByHashError: "failed to find by hash",
+        DumpConfigError: "failed to dump config",
+        InitWithoutConfigError: "failed to create a new chain without config"
     },
     BCTreeErrorKind {
-        InitError : "failed to init the blockchain tree (with config)",
-        InitWithoutConfigError : "failed to init the blockchain tree (with config)",
-        DumpPoolError : "failed to dump pool",
-        GetDerivChainError : "failed to get the derivative chain",
-        CreateDerivChainError : "failed to create the derivative chain",
-        CheckMainFoldersError : "failed to check and fix the main folders",
-        AddFundsError : "failed to add funds",
-        DecreaseFundsError : "failed to decrease funds",
-        GetFundsError : "failed to get funds",
-        GetOldFundsError : "failed to get funds from old summary db",
-        MoveSummaryDBError : "failed to move summary database",
-        NewTransactionError : "failed to create new transaction"
+        InitError: "failed to init the blockchain tree (with config)",
+        InitWithoutConfigError: "failed to init the blockchain tree (with config)",
+        DumpPoolError: "failed to dump pool",
+        GetDerivChainError: "failed to get the derivative chain",
+        CreateDerivChainError: "failed to create the derivative chain",
+        CheckMainFoldersError: "failed to check and fix the main folders",
+        AddFundsError: "failed to add funds",
+        DecreaseFundsError: "failed to decrease funds",
+        GetFundsError: "failed to get funds",
+        GetOldFundsError: "failed to get funds from old summary db",
+        MoveSummaryDBError: "failed to move summary database",
+        NewTransactionError: "failed to create new transaction"
     }
-
 ];
