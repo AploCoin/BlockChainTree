@@ -13,6 +13,37 @@ use crate::DumpHeaders::Headers;
 
 use error_stack::{Report, Result, ResultExt, IntoReport};
 
+trait Transaction {
+    fn new(sender:&[u8;33],
+        receiver:&[u8;33],
+        timestamp:u64,
+        signature:&[u8;64],
+        amount:BigUint)->Self;
+
+    fn hash(&self,prev_hash:&[u8;32]) -> Box<[u8;32]>;
+    fn hash_without_signature(&self,prev_hash:&[u8;32]) -> Box<[u8;32]>;
+
+    fn verify(&self,prev_hash:&[u8;32]) -> Result<bool, TransactionError>;
+
+    fn dump(&self) -> Result<Vec<u8>, TransactionError>;
+    fn get_dump_size(&self) -> usize;
+
+    fn parse_transaction(data:&[u8],transaction_size:u64) -> Result<Self, TransactionError>;
+
+    fn get_sender(&self) -> &[u8;33];
+    fn get_receiver(&self) -> &[u8;33];
+    fn get_timestamp(&self) -> u64;
+    fn get_signature(&self) -> &[u8;64];
+    fn get_amount(&self) -> &BigUint;
+    
+    fn sign(sender:&[u8;33],
+        receiver:&[u8;33],
+        timestamp:u64,
+        amount:BigUint,
+        prev_hash:&[u8;32],
+        private_key:&[u8;32]) -> Box<[u8;64]>;
+}
+
 #[derive(Debug)]
 pub struct Transaction{
     sender:[u8;33],
