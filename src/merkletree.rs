@@ -21,18 +21,18 @@ pub fn find_closest_power_of_2(number: usize) -> usize {
     let mut x: usize = 1;
     while x <= number {
         power += 1;
-        x = x << 1;
+        x <<= 1;
     }
-    return power;
+    power
 }
 
 impl MerkleTree {
     pub fn new() -> MerkleTree {
-        return MerkleTree {
+        MerkleTree {
             array_representation: Vec::with_capacity(0),
             depth: 0,
             initial_amount_of_inputs: 0,
-        };
+        }
     }
 
     fn calculate_parents_hash(&self, index: usize) -> Option<[u8; 32]> {
@@ -53,14 +53,14 @@ impl MerkleTree {
             hash_input = PADDING_HASH;
         }
         if self.array_representation[right_child] != None {
-            for i in 0..32 {
-                hash_input[i] &= self.array_representation[right_child].unwrap()[i];
+            for (idx, hinput) in hash_input.iter_mut().enumerate() {
+                *hinput &= self.array_representation[right_child].unwrap()[idx];
             }
         }
 
         hasher.update(hash_input);
         let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
-        return Some(result);
+        Some(result)
     }
 
     fn populate_tree(&mut self, right_node: usize, right_branch: bool) {
@@ -79,7 +79,7 @@ impl MerkleTree {
     }
 
     pub fn add_objects(&mut self, mut input: Vec<&[u8; 32]>) -> bool {
-        if self.array_representation.len() != 0 {
+        if !self.array_representation.is_empty() {
             return false;
         }
 
@@ -107,28 +107,27 @@ impl MerkleTree {
         }
         self.populate_tree(self.array_representation.len(), true);
 
-        return true;
+        true
     }
 
     pub fn check_node(&self, index: usize) -> bool {
         let parent_hash = self.calculate_parents_hash(index).unwrap();
 
-        for i in 0..32 {
-            if self.array_representation[index].unwrap()[i] != parent_hash[i] {
+        for (idx, phash) in parent_hash.iter().enumerate() {
+            if self.array_representation[index].unwrap()[idx] != *phash {
                 return false;
             }
         }
 
-        return true;
+        true
     }
 
     fn exists(&self, hash: &[u8; 32]) -> Option<usize> {
         for i in self.array_representation.len() - self.initial_amount_of_inputs - 1
             ..self.array_representation.len()
         {
-            if self.array_representation[i].is_none() {
-                return None;
-            }
+            self.array_representation[i]?;
+
             let mut equal: bool = true;
             for (first, second) in self.array_representation[i]
                 .unwrap()
@@ -144,14 +143,14 @@ impl MerkleTree {
                 return Some(i);
             }
         }
-        return None;
+        None
     }
 
     pub fn get_proof<'a>(&'a self, hash: &[u8; 32]) -> Result<Vec<&'a [u8; 32]>, MerkleTreeError> {
         let starting_node_res = self.exists(hash);
         if starting_node_res.is_none() {
             return Err(Report::new(MerkleTreeError::TreeError(
-                MerkleTreeErrorKind::GettingProofError,
+                MerkleTreeErrorKind::GettingProof,
             ))
             .attach_printable(format!(
                 "hash: {:?} // {} doesn't exist",
@@ -167,7 +166,7 @@ impl MerkleTree {
             if starting_node % 2 == 0 {
                 match self.array_representation[starting_node - 1] {
                     Some(ref data) => {
-                        to_return.push(&data);
+                        to_return.push(data);
                     }
                     _ => {
                         to_return.push(&PADDING_HASH);
@@ -177,7 +176,7 @@ impl MerkleTree {
             } else {
                 match self.array_representation[starting_node + 1] {
                     Some(ref data) => {
-                        to_return.push(&data);
+                        to_return.push(data);
                     }
                     _ => {
                         to_return.push(&PADDING_HASH);
@@ -186,9 +185,9 @@ impl MerkleTree {
                 starting_node = (starting_node - 1) / 2;
             }
         }
-        return Ok(to_return);
+        Ok(to_return)
     }
-    pub fn get_root<'a>(&'a self) -> &'a [u8; 32] {
+    pub fn get_root(&self) -> &[u8; 32] {
         return self.array_representation[0].as_ref().unwrap();
     }
 }
@@ -197,16 +196,17 @@ pub fn verify_proof(hash: &[u8; 32], root: &[u8; 32], proof: Vec<&[u8; 32]>) -> 
     let mut hasher = Sha256::new();
     let mut calculated_root: [u8; 32] = [0; 32];
 
-    for i in 0..32 {
-        calculated_root[i] = hash[i] & proof[0][i];
+    for (n, i) in calculated_root.iter_mut().enumerate() {
+        *i = hash[n] & proof[0][n];
     }
     hasher.update(calculated_root);
     calculated_root = hasher.finalize().as_slice().try_into().unwrap();
 
-    for i in 1..proof.len() {
+    for idx in proof.iter().skip(1) {
         let mut hasher = Sha256::new();
-        for n in 0..32 {
-            calculated_root[n] = calculated_root[n] & proof[i][n];
+
+        for (n, item) in calculated_root.iter_mut().enumerate() {
+            *item &= idx[n]
         }
         hasher.update(calculated_root);
         calculated_root = hasher.finalize().as_slice().try_into().unwrap();
@@ -217,5 +217,5 @@ pub fn verify_proof(hash: &[u8; 32], root: &[u8; 32], proof: Vec<&[u8; 32]>) -> 
             return false;
         }
     }
-    return true;
+    true
 }

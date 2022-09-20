@@ -1,7 +1,5 @@
-use colored::Colorize;
+//use colored::Colorize;
 use thiserror::Error;
-
-use crate::block::SummarizeBlock;
 
 macro_rules! root_errors {
     [$(
@@ -59,12 +57,12 @@ macro_rules! sub_errors {
 root_errors![
 
     ToolsError : "Error ocurred while using a tool function" {
-        BiguintError(BiguintErrorKind),
-        ZstdError(ZstdErrorKind)
+        Biguint(BiguintErrorKind),
+        Zstd(ZstdErrorKind)
     },
 
     TransactionError : "Error ocurred while operating on a transaction" {
-        TxError(TxErrorKind)
+        Tx(TxErrorKind)
     },
 
     MerkleTreeError : "Error ocurred while operating on the merkletree" {
@@ -72,19 +70,19 @@ root_errors![
     },
 
     BlockError : "Error ocurred while operating on a block" {
-        BasicInfoError(BasicInfoErrorKind),
-        TransactionTokenError(TxTokenErrorKind),
-        TransactionBlockError(TxBlockErrorKind),
-        TokenBlockError(TokenBlockErrorKind),
-        SummarizeBlockError(SummarizeBlockErrorKind),
+        BasicInfo(BasicInfoErrorKind),
+        TransactionToken(TxTokenErrorKind),
+        TransactionBlock(TxBlockErrorKind),
+        TokenBlock(TokenBlockErrorKind),
+        SummarizeBlock(SummarizeBlockErrorKind),
         HeaderError(DumpHeadersErrorKind),
-        NotImplementedError(NotImplementedKind)
+        NotImplemented(NotImplementedKind)
     },
 
     BlockChainTreeError : "Error ocurred while operating on the blockchain tree" {
-        ChainError(ChainErrorKind),
-        DerivativeChainError(DerivChainErrorKind),
-        BlockChainTreeError(BCTreeErrorKind)
+        Chain(ChainErrorKind),
+        DerivativeChain(DerivChainErrorKind),
+        BlockChainTree(BCTreeErrorKind)
     },
 
     DumpHeadersError : "Error with dump header"{
@@ -101,72 +99,72 @@ sub_errors![
         WrongHeader: "Wrong header"
     },
     BiguintErrorKind {
-        DumpError: "failed to dump biguint, amount of bunches larger than 255",
-        LoadError: "failed to load biguint (data length < bytes)"
+        Dump: "failed to dump biguint, amount of bunches larger than 255",
+        Load: "failed to load biguint (data length < bytes)"
     },
     ZstdErrorKind {
-        CompressingFileError: "failed to compress file with zstd",
-        DecompressingFileError: "failed to decompress file with zstd"
+        CompressingFile: "failed to compress file with zstd",
+        DecompressingFile: "failed to decompress file with zstd"
     },
     TxErrorKind {
-        VerifyError: "failed to verify transaction",
-        DumpError: "failed to dump transaction (amount)",
-        ParseError: "failed to parse transaction"
+        Verify: "failed to verify transaction",
+        Dump: "failed to dump transaction (amount)",
+        Parse: "failed to parse transaction"
     },
     MerkleTreeErrorKind {
-        GettingProofError: "failed to get proof"
+        GettingProof: "failed to get proof"
     },
     BasicInfoErrorKind {
-        DumpError: "failed to dump basic info",
-        ParseError: "failed to parse basic info"
+        Dump: "failed to dump basic info",
+        Parse: "failed to parse basic info"
     },
     TxTokenErrorKind {
-        SettingTxError: "failed to set transaction (already set)",
-        SettingTokenError: "failed to set token (already set)",
-        DumpError: "failed to dump (token or transaction)"
+        SettingTx: "failed to set transaction (already set)",
+        SettingToken: "failed to set token (already set)",
+        Dump: "failed to dump (token or transaction)"
     },
     TxBlockErrorKind {
-        BuildingMerkleTreeError: "failed to build merkle tree",
-        DumpError: "failed to dump",
-        ParseError: "failed to parse"
+        BuildingMerkleTree: "failed to build merkle tree",
+        Dump: "failed to dump",
+        Parse: "failed to parse"
     },
     TokenBlockErrorKind {
-        DumpError: "failed to dump",
-        ParseError: "failed to parse"
+        Dump: "failed to dump",
+        Parse: "failed to parse"
     },
     SummarizeBlockErrorKind {
-        DumpError: "failed to dump",
-        ParseError: "failed to parse",
-        HashError: "failed to hash (couldn't dump)"
+        Dump: "failed to dump",
+        Parse: "failed to parse",
+        Hash: "failed to hash (couldn't dump)"
     },
     ChainErrorKind {
-        InitError: "failed to create a new chain",
-        AddingBlockError: "failed to add block",
-        FindByHeightError: "failed to find block by height",
-        FindByHashError: "failed to find by hash",
-        DumpConfigError: "failed to dump config",
-        InitWithoutConfigError: "failed to create a new chain without config"
+        Init: "failed to create a new chain",
+        AddingBlock: "failed to add block",
+        FindByHeight: "failed to find block by height",
+        FindByHashE: "failed to find by hash",
+        DumpConfig: "failed to dump config",
+        InitWithoutConfig: "failed to create a new chain without config"
     },
     DerivChainErrorKind {
-        InitError: "failed to create a new derivative chain",
-        AddingBlockError: "failed to add block",
-        FindByHeightError: "failed to find block by height",
-        FindByHashError: "failed to find by hash",
-        DumpConfigError: "failed to dump config",
-        InitWithoutConfigError: "failed to create a new chain without config"
+        Init: "failed to create a new derivative chain",
+        AddingBlock: "failed to add block",
+        FindByHeight: "failed to find block by height",
+        FindByHash: "failed to find by hash",
+        DumpConfig: "failed to dump config",
+        InitWithoutConfig: "failed to create a new chain without config"
     },
     BCTreeErrorKind {
-        InitError: "failed to init the blockchain tree (with config)",
-        InitWithoutConfigError: "failed to init the blockchain tree (with config)",
-        DumpPoolError: "failed to dump pool",
-        GetDerivChainError: "failed to get the derivative chain",
-        CreateDerivChainError: "failed to create the derivative chain",
-        CheckMainFoldersError: "failed to check and fix the main folders",
-        AddFundsError: "failed to add funds",
-        DecreaseFundsError: "failed to decrease funds",
-        GetFundsError: "failed to get funds",
-        GetOldFundsError: "failed to get funds from old summary db",
-        MoveSummaryDBError: "failed to move summary database",
-        NewTransactionError: "failed to create new transaction"
+        Init: "failed to init the blockchain tree (with config)",
+        InitWithoutConfig: "failed to init the blockchain tree (with config)",
+        DumpPool: "failed to dump pool",
+        GetDerivChain: "failed to get the derivative chain",
+        CreateDerivChain: "failed to create the derivative chain",
+        CheckMainFolders: "failed to check and fix the main folders",
+        AddFunds: "failed to add funds",
+        DecreaseFunds: "failed to decrease funds",
+        GetFunds: "failed to get funds",
+        GetOldFunds: "failed to get funds from old summary db",
+        MoveSummaryDB: "failed to move summary database",
+        NewTransaction: "failed to create new transaction"
     }
 ];

@@ -8,7 +8,6 @@ use std::mem::transmute_copy;
 
 use crate::dump_headers::Headers;
 use secp256k1::ecdsa::Signature;
-use secp256k1::hashes::sha256;
 use secp256k1::PublicKey;
 use secp256k1::{Message, Secp256k1, SecretKey};
 
@@ -55,18 +54,17 @@ impl Transaction {
         signature: &[u8; 64],
         amount: BigUint,
     ) -> Transaction {
-        let transaction: Transaction = Transaction {
+        Transaction {
             sender: *sender,
             receiver: *receiver,
             timestamp,
             signature: *signature,
             amount,
-        };
-        return transaction;
+        }
     }
 
     pub fn get_amount(&self) -> &BigUint {
-        return &self.amount;
+        &self.amount
     }
 }
 
@@ -126,9 +124,9 @@ impl Transactionable for Transaction {
 
         hasher.update(concatenated_input);
         let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
-        let to_return = Box::new(result);
 
-        return to_return;
+        Box::new(result)
+
     }
 
     fn verify(&self, prev_hash: &[u8; 32]) -> Result<bool, TransactionError> {
@@ -137,7 +135,7 @@ impl Transactionable for Transaction {
         // load sender
         let sender = PublicKey::from_slice(&self.sender)
             .report()
-            .change_context(TransactionError::TxError(TxErrorKind::VerifyError))?;
+            .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // creating verifier
         let verifier = Secp256k1::verification_only();
@@ -145,22 +143,22 @@ impl Transactionable for Transaction {
         // load message
         let message = Message::from_slice(Box::leak(signed_data_hash))
             .report()
-            .change_context(TransactionError::TxError(TxErrorKind::VerifyError))?;
+            .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // load signature
         let signature = Signature::from_compact(&self.signature)
             .report()
-            .change_context(TransactionError::TxError(TxErrorKind::VerifyError))?;
+            .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // verifying hashed data with public key
         let result = verifier.verify_ecdsa(&message, &signature, &sender);
 
         match result {
             Err(_) => {
-                return Ok(false);
+                Ok(false)
             }
             Ok(_) => {
-                return Ok(true);
+                Ok(true)
             }
         }
     }
@@ -195,14 +193,13 @@ impl Transactionable for Transaction {
 
         // amount
         tools::dump_biguint(&self.amount, &mut transaction_dump)
-            .change_context(TransactionError::TxError(TxErrorKind::DumpError))?;
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))?;
 
-        return Ok(transaction_dump);
+        Ok(transaction_dump)
     }
 
     fn get_dump_size(&self) -> usize {
-        let calculated_size: usize = 1 + 33 + 33 + 8 + 64 + tools::bigint_size(&self.amount);
-        return calculated_size;
+        1 + 33 + 33 + 8 + 64 + tools::bigint_size(&self.amount)
     }
 
     fn parse(data: &[u8], size: u64) -> Result<Transaction, TransactionError> {
@@ -210,7 +207,7 @@ impl Transactionable for Transaction {
 
         if data.len() <= 138 {
             return Err(
-                Report::new(TransactionError::TxError(TxErrorKind::ParseError))
+                Report::new(TransactionError::Tx(TxErrorKind::Parse))
                     .attach_printable("Data length <= 138"),
             );
         }
@@ -234,12 +231,12 @@ impl Transactionable for Transaction {
         // parsing amount
         let (amount, idx) = tools::load_biguint(&data[index..])
             .attach_printable("Couldn't parse amount")
-            .change_context(TransactionError::TxError(TxErrorKind::ParseError))?;
+            .change_context(TransactionError::Tx(TxErrorKind::Parse))?;
 
         index += idx;
         if index != size as usize {
             return Err(
-                Report::new(TransactionError::TxError(TxErrorKind::ParseError))
+                Report::new(TransactionError::Tx(TxErrorKind::Parse))
                     .attach_printable("Index != Tx size"),
             );
         }
@@ -250,19 +247,19 @@ impl Transactionable for Transaction {
     }
 
     fn get_sender(&self) -> &[u8; 33] {
-        return &self.sender;
+        &self.sender
     }
 
     fn get_receiver(&self) -> &[u8; 33] {
-        return &self.receiver;
+        &self.receiver
     }
 
     fn get_timestamp(&self) -> u64 {
-        return self.timestamp;
+        self.timestamp
     }
 
     fn get_signature(&self) -> &[u8; 64] {
-        return &self.signature;
+        &self.signature
     }
 
     fn sign(
