@@ -1,7 +1,7 @@
 use colored::Colorize;
 use thiserror::Error;
 
-use crate::Block::SummarizeBlock;
+use crate::block::SummarizeBlock;
 
 macro_rules! root_errors {
     [$(
@@ -57,6 +57,7 @@ macro_rules! sub_errors {
 // }
 
 root_errors![
+
     ToolsError : "Error ocurred while using a tool function" {
         BiguintError(BiguintErrorKind),
         ZstdError(ZstdErrorKind)
@@ -75,17 +76,30 @@ root_errors![
         TransactionTokenError(TxTokenErrorKind),
         TransactionBlockError(TxBlockErrorKind),
         TokenBlockError(TokenBlockErrorKind),
-        SummarizeBlockError(SummarizeBlockErrorKind)
+        SummarizeBlockError(SummarizeBlockErrorKind),
+        HeaderError(DumpHeadersErrorKind),
+        NotImplementedError(NotImplementedKind)
     },
 
     BlockChainTreeError : "Error ocurred while operating on the blockchain tree" {
         ChainError(ChainErrorKind),
         DerivativeChainError(DerivChainErrorKind),
         BlockChainTreeError(BCTreeErrorKind)
+    },
+
+    DumpHeadersError : "Error with dump header"{
+        DumpHeadersError(DumpHeadersErrorKind)
     }
 ];
 
 sub_errors![
+    NotImplementedKind {
+        Token: "Token is not implemented yet"
+    },
+    DumpHeadersErrorKind {
+        UknownHeader: "Uknown header",
+        WrongHeader: "Wrong header"
+    },
     BiguintErrorKind {
         DumpError: "failed to dump biguint, amount of bunches larger than 255",
         LoadError: "failed to load biguint (data length < bytes)"

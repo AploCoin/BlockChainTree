@@ -1,4 +1,4 @@
-use crate::Errors::*;
+use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
@@ -66,7 +66,7 @@ pub fn compress_to_file(output_file: String, data: &[u8]) -> Result<(), ToolsErr
         .report()
         .change_context(ToolsError::ZstdError(ZstdErrorKind::CompressingFileError))?;
 
-    let encoder = zstd::Encoder::new(target, 1)
+    let mut encoder = zstd::Encoder::new(target, 1)
         .report()
         .change_context(ToolsError::ZstdError(ZstdErrorKind::CompressingFileError))?;
 
@@ -97,11 +97,11 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
         .attach_printable("Error creating decoder")
         .change_context(ToolsError::ZstdError(ZstdErrorKind::DecompressingFileError))?;
 
-    let result = decoder
+    decoder
         .read_to_end(&mut decoded_data)
         .report()
         .attach_printable("Error reading file")
-        .change_context(ToolsError::ZstdError(ZstdErrorKind::DecompressingFileError));
+        .change_context(ToolsError::ZstdError(ZstdErrorKind::DecompressingFileError))?;
 
     return Ok(decoded_data);
 }

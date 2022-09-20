@@ -2,7 +2,7 @@ use error_stack::{Report, Result};
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
 
-use crate::Errors::*;
+use crate::errors::*;
 
 static PADDING_HASH: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\
                                 \xff\xff\xff\xff\xff\xff\xff\xff\

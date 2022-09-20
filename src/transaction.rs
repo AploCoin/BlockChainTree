@@ -1,11 +1,12 @@
-use crate::Errors::*;
-use crate::Tools;
+use crate::errors::*;
+use crate::tools;
 use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
+use std::fmt::Debug;
 use std::mem::transmute_copy;
 
-use crate::DumpHeaders::Headers;
+use crate::dump_headers::Headers;
 use secp256k1::ecdsa::Signature;
 use secp256k1::hashes::sha256;
 use secp256k1::PublicKey;
@@ -13,16 +14,8 @@ use secp256k1::{Message, Secp256k1, SecretKey};
 
 use error_stack::{IntoReport, Report, Result, ResultExt};
 
-pub trait Transactionable {
-    fn new(
-        sender: &[u8; 33],
-        receiver: &[u8; 33],
-        timestamp: u64,
-        signature: &[u8; 64],
-        amount: BigUint,
-    ) -> Self;
-
-    fn hash(&self, prev_hash: &[u8; 32]) -> Box<[u8; 32]>;
+pub trait Transactionable: Debug {
+    fn hash(&self, prev_hash: &[u8; 32]) -> [u8; 32];
     fn hash_without_signature(&self, prev_hash: &[u8; 32]) -> Box<[u8; 32]>;
 
     fn verify(&self, prev_hash: &[u8; 32]) -> Result<bool, TransactionError>;
@@ -30,7 +23,7 @@ pub trait Transactionable {
     fn dump(&self) -> Result<Vec<u8>, TransactionError>;
     fn get_dump_size(&self) -> usize;
 
-    fn parse_transaction(data: &[u8], transaction_size: u64) -> Result<Self, TransactionError>
+    fn parse(data: &[u8], size: u64) -> Result<Self, TransactionError>
     where
         Self: Sized;
 
@@ -38,16 +31,11 @@ pub trait Transactionable {
     fn get_receiver(&self) -> &[u8; 33];
     fn get_timestamp(&self) -> u64;
     fn get_signature(&self) -> &[u8; 64];
-    fn get_amount(&self) -> &BigUint;
-
     fn sign(
-        sender: &[u8; 33],
-        receiver: &[u8; 33],
-        timestamp: u64,
-        amount: BigUint,
+        &mut self,
         prev_hash: &[u8; 32],
         private_key: &[u8; 32],
-    ) -> Box<[u8; 64]>;
+    ) -> Result<(), TransactionError>;
 }
 
 #[derive(Debug)]
@@ -77,7 +65,13 @@ impl Transaction {
         return transaction;
     }
 
-    pub fn hash(&self, prev_hash: &[u8; 32]) -> Box<[u8; 32]> {
+    pub fn get_amount(&self) -> &BigUint {
+        return &self.amount;
+    }
+}
+
+impl Transactionable for Transaction {
+    fn hash(&self, prev_hash: &[u8; 32]) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
         let amount_as_bytes = self.amount.to_bytes_be();
@@ -104,13 +98,10 @@ impl Transaction {
         }
 
         hasher.update(concatenated_input);
-        let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
-        let to_return = Box::new(result);
-
-        return to_return;
+        hasher.finalize().as_slice().try_into().unwrap()
     }
 
-    pub fn hash_without_signature(&self, prev_hash: &[u8; 32]) -> Box<[u8; 32]> {
+    fn hash_without_signature(&self, prev_hash: &[u8; 32]) -> Box<[u8; 32]> {
         let mut hasher = Sha256::new();
 
         let amount_as_bytes = self.amount.to_bytes_be();
@@ -140,7 +131,7 @@ impl Transaction {
         return to_return;
     }
 
-    pub fn verify(&self, prev_hash: &[u8; 32]) -> Result<bool, TransactionError> {
+    fn verify(&self, prev_hash: &[u8; 32]) -> Result<bool, TransactionError> {
         let signed_data_hash: Box<[u8; 32]> = self.hash_without_signature(prev_hash);
 
         // load sender
@@ -174,7 +165,7 @@ impl Transaction {
         }
     }
 
-    pub fn dump(&self) -> Result<Vec<u8>, TransactionError> {
+    fn dump(&self) -> Result<Vec<u8>, TransactionError> {
         let timestamp_as_bytes: [u8; 8] = self.timestamp.to_be_bytes();
 
         let calculated_size: usize = self.get_dump_size();
@@ -203,21 +194,18 @@ impl Transaction {
         }
 
         // amount
-        Tools::dump_biguint(&self.amount, &mut transaction_dump)
+        tools::dump_biguint(&self.amount, &mut transaction_dump)
             .change_context(TransactionError::TxError(TxErrorKind::DumpError))?;
 
         return Ok(transaction_dump);
     }
 
-    pub fn get_dump_size(&self) -> usize {
-        let calculated_size: usize = 1 + 33 + 33 + 8 + 64 + Tools::bigint_size(&self.amount);
+    fn get_dump_size(&self) -> usize {
+        let calculated_size: usize = 1 + 33 + 33 + 8 + 64 + tools::bigint_size(&self.amount);
         return calculated_size;
     }
 
-    pub fn parse_transaction(
-        data: &[u8],
-        transaction_size: u64,
-    ) -> Result<Transaction, TransactionError> {
+    fn parse(data: &[u8], size: u64) -> Result<Transaction, TransactionError> {
         let mut index: usize = 0;
 
         if data.len() <= 138 {
@@ -244,68 +232,60 @@ impl Transaction {
         index += 64;
 
         // parsing amount
-        let (amount, idx) = Tools::load_biguint(&data[index..])
+        let (amount, idx) = tools::load_biguint(&data[index..])
             .attach_printable("Couldn't parse amount")
             .change_context(TransactionError::TxError(TxErrorKind::ParseError))?;
 
         index += idx;
-        if index != transaction_size as usize {
+        if index != size as usize {
             return Err(
                 Report::new(TransactionError::TxError(TxErrorKind::ParseError))
                     .attach_printable("Index != Tx size"),
             );
         }
 
-        let transaction: Transaction =
-            Transaction::new(&sender, &receiver, timestamp, &signature, amount);
-
-        return Ok(transaction);
+        Ok(Transaction::new(
+            &sender, &receiver, timestamp, &signature, amount,
+        ))
     }
 
-    pub fn get_sender(&self) -> &[u8; 33] {
+    fn get_sender(&self) -> &[u8; 33] {
         return &self.sender;
     }
 
-    pub fn get_receiver(&self) -> &[u8; 33] {
+    fn get_receiver(&self) -> &[u8; 33] {
         return &self.receiver;
     }
 
-    pub fn get_timestamp(&self) -> u64 {
+    fn get_timestamp(&self) -> u64 {
         return self.timestamp;
     }
 
-    pub fn get_signature(&self) -> &[u8; 64] {
+    fn get_signature(&self) -> &[u8; 64] {
         return &self.signature;
     }
 
-    pub fn get_amount(&self) -> &BigUint {
-        return &self.amount;
-    }
-
-    pub fn sign(
-        sender: &[u8; 33],
-        receiver: &[u8; 33],
-        timestamp: u64,
-        amount: BigUint,
+    fn sign(
+        &mut self,
         prev_hash: &[u8; 32],
         private_key: &[u8; 32],
-    ) -> Box<[u8; 64]> {
+    ) -> Result<(), TransactionError> {
         let mut hasher = Sha256::new();
 
-        let amount_as_bytes = amount.to_bytes_be();
+        let amount_as_bytes = self.amount.to_bytes_be();
         let calculated_size: usize = 32 + 33 + 33 + 8 + amount_as_bytes.len();
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
         for byte in prev_hash.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in sender.iter() {
+        for byte in self.sender.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in receiver.iter() {
+        for byte in self.receiver.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in timestamp.to_be_bytes().iter() {
+        for byte in self.timestamp.to_be_bytes().iter() {
             concatenated_input.push(*byte);
         }
         for byte in amount_as_bytes.iter() {
@@ -322,6 +302,8 @@ impl Transaction {
 
         let signature = signer.sign_ecdsa(&message, &secret_key);
 
-        return Box::new(signature.serialize_compact());
+        self.signature = signature.serialize_compact();
+
+        Ok(())
     }
 }

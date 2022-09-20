@@ -1,17 +1,14 @@
 #![allow(non_snake_case)]
-use crate::Block::{
-    SumTransactionBlock, SummarizeBlock, TokenBlock, TransactionBlock, TransactionToken,
-};
-use crate::Token;
-use crate::Tools;
-use crate::Transaction::Transaction;
+use crate::block::{SumTransactionBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::tools;
+use crate::transaction::{Transaction, Transactionable};
 use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
 use std::collections::VecDeque;
 use std::convert::TryInto;
 use std::mem::transmute_copy;
 
-use crate::DumpHeaders::Headers;
+use crate::dump_headers::Headers;
 use hex::ToHex;
 use num_traits::Zero;
 use rocksdb::{DBWithThreadMode as DB, MultiThreaded, Options};
@@ -25,7 +22,7 @@ use std::io::Write;
 use std::path::Path;
 use std::str;
 
-use crate::Errors::*;
+use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 
 static BLOCKCHAIN_DIRECTORY: &str = "./BlockChainTree/";
@@ -133,7 +130,7 @@ impl Chain {
                 ChainErrorKind::AddingBlockError,
             ))?;
 
-        let hash = Tools::hash(&dump);
+        let hash = tools::hash(&dump);
 
         self.db
             .put(hash, dump)
@@ -338,7 +335,7 @@ impl DerivativeChain {
             ))
             .attach_printable("failed to open references db")?;
 
-        let file = File::open(path_height)
+        let mut file = File::open(path_height)
             .report()
             .change_context(BlockChainTreeError::DerivativeChainError(
                 DerivChainErrorKind::InitError,
@@ -402,7 +399,7 @@ impl DerivativeChain {
                 DerivChainErrorKind::AddingBlockError,
             ))?;
 
-        let hash = Tools::hash(&dump);
+        let hash = tools::hash(&dump);
 
         self.db
             .put(self.height.to_be_bytes(), dump)
@@ -577,7 +574,7 @@ impl DerivativeChain {
 }
 
 pub struct BlockChainTree {
-    trxs_pool: VecDeque<TransactionToken>,
+    trxs_pool: VecDeque<Box<dyn Transactionable>>,
     summary_db: Option<DB<MultiThreaded>>,
     old_summary_db: Option<DB<MultiThreaded>>,
     main_chain: Chain,
@@ -630,7 +627,8 @@ impl BlockChainTree {
         let mut buf: [u8; 4] = [0; 4];
 
         // allocate VecDeque
-        let mut trxs_pool = VecDeque::<TransactionToken>::with_capacity(trxs_amount as usize);
+        let mut trxs_pool =
+            VecDeque::<Box<dyn Transactionable>>::with_capacity(trxs_amount as usize);
 
         // parsing transactions
         for _ in 0..trxs_amount {
@@ -654,13 +652,12 @@ impl BlockChainTree {
 
             if transaction_buffer[0] == 0 {
                 let transaction =
-                    Transaction::parse_transaction(&transaction_buffer[1..], (tr_size - 1) as u64)
+                    Transaction::parse(&transaction_buffer[1..], (tr_size - 1) as u64)
                         .change_context(BlockChainTreeError::BlockChainTreeError(
                             BCTreeErrorKind::InitError,
                         ))?;
 
-                let tr_wrapped = TransactionToken::new(Some(transaction), None);
-                trxs_pool.push_back(tr_wrapped);
+                trxs_pool.push_back(Box::new(transaction));
             } else {
                 return Err(Report::new(BlockChainTreeError::BlockChainTreeError(
                     BCTreeErrorKind::InitError,
@@ -704,7 +701,7 @@ impl BlockChainTree {
             .attach_printable("failed to open old summary db")?;
 
         // allocate VecDeque
-        let mut trxs_pool = VecDeque::<TransactionToken>::new();
+        let mut trxs_pool = VecDeque::<Box<dyn Transactionable>>::new();
 
         // opening main chain
         let main_chain = Chain::new_without_config(MAIN_CHAIN_DIRECTORY, &GENESIS_BLOCK)
@@ -943,8 +940,8 @@ impl BlockChainTree {
         let result = self.summary_db.as_mut().unwrap().get(addr);
         match result {
             Ok(None) => {
-                let mut dump: Vec<u8> = Vec::with_capacity(Tools::bigint_size(&funds));
-                Tools::dump_biguint(funds, &mut dump).change_context(
+                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&funds));
+                tools::dump_biguint(funds, &mut dump).change_context(
                     BlockChainTreeError::BlockChainTreeError(BCTreeErrorKind::AddFundsError),
                 )?;
 
@@ -964,15 +961,15 @@ impl BlockChainTree {
                 return Ok(());
             }
             Ok(Some(prev)) => {
-                let res = Tools::load_biguint(&prev).change_context(
+                let res = tools::load_biguint(&prev).change_context(
                     BlockChainTreeError::BlockChainTreeError(BCTreeErrorKind::AddFundsError),
                 )?;
 
                 let mut previous = res.0;
                 previous += funds;
 
-                let mut dump: Vec<u8> = Vec::with_capacity(Tools::bigint_size(&previous));
-                Tools::dump_biguint(&previous, &mut dump).change_context(
+                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&previous));
+                tools::dump_biguint(&previous, &mut dump).change_context(
                     BlockChainTreeError::BlockChainTreeError(BCTreeErrorKind::AddFundsError),
                 )?;
 
@@ -1021,7 +1018,7 @@ impl BlockChainTree {
                 )));
             }
             Ok(Some(prev)) => {
-                let res = Tools::load_biguint(&prev).change_context(
+                let res = tools::load_biguint(&prev).change_context(
                     BlockChainTreeError::BlockChainTreeError(BCTreeErrorKind::DecreaseFundsError),
                 )?;
 
@@ -1034,8 +1031,8 @@ impl BlockChainTree {
                 }
                 previous -= funds;
 
-                let mut dump: Vec<u8> = Vec::with_capacity(Tools::bigint_size(&previous));
-                Tools::dump_biguint(&previous, &mut dump).change_context(
+                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&previous));
+                tools::dump_biguint(&previous, &mut dump).change_context(
                     BlockChainTreeError::BlockChainTreeError(BCTreeErrorKind::DecreaseFundsError),
                 )?;
 
@@ -1073,7 +1070,7 @@ impl BlockChainTree {
                 return Ok(Zero::zero());
             }
             Ok(Some(prev)) => {
-                let res = Tools::load_biguint(&prev).change_context(
+                let res = tools::load_biguint(&prev).change_context(
                     BlockChainTreeError::BlockChainTreeError(BCTreeErrorKind::GetFundsError),
                 )?;
 
@@ -1099,7 +1096,7 @@ impl BlockChainTree {
                 return Ok(Zero::zero());
             }
             Ok(Some(prev)) => {
-                let res = Tools::load_biguint(&prev).change_context(
+                let res = tools::load_biguint(&prev).change_context(
                     BlockChainTreeError::BlockChainTreeError(BCTreeErrorKind::GetOldFundsError),
                 )?;
                 let previous = res.0;
@@ -1162,38 +1159,30 @@ impl BlockChainTree {
         return Ok(());
     }
 
-    pub fn new_transaction(&mut self, tr: TransactionToken) -> Result<(), BlockChainTreeError> {
-        if tr.is_transaction() {
-            let transaction = tr.get_transaction().as_ref().unwrap();
+    pub fn new_transaction(&mut self, tr: Transaction) -> Result<(), BlockChainTreeError> {
+        // if it is in first bunch of transactions
+        // to be added to blockchain.
+        // AND if it is not a last block
+        // that is pending.
+        if self.trxs_pool.len() < MAX_TRANSACTIONS_PER_BLOCK
+            && self.main_chain.get_height() as usize + 1 % BLOCKS_PER_ITERATION != 0
+        {
+            self.decrease_funds(tr.get_sender(), tr.get_amount())
+                .change_context(BlockChainTreeError::BlockChainTreeError(
+                    BCTreeErrorKind::NewTransactionError,
+                ))?;
 
-            // if it is in first bunch of transactions
-            // to be added to blockchain.
-            // AND if it is not a last block
-            // that is pending.
-            if self.trxs_pool.len() < MAX_TRANSACTIONS_PER_BLOCK
-                && self.main_chain.get_height() as usize + 1 % BLOCKS_PER_ITERATION != 0
-            {
-                self.decrease_funds(transaction.get_sender(), transaction.get_amount())
-                    .change_context(BlockChainTreeError::BlockChainTreeError(
-                        BCTreeErrorKind::NewTransactionError,
-                    ))?;
-
-                self.add_funds(transaction.get_sender(), transaction.get_amount())
-                    .change_context(BlockChainTreeError::BlockChainTreeError(
-                        BCTreeErrorKind::NewTransactionError,
-                    ))?;
-            }
-            self.trxs_pool.push_front(tr);
-
-            return Ok(());
+            self.add_funds(tr.get_sender(), tr.get_amount())
+                .change_context(BlockChainTreeError::BlockChainTreeError(
+                    BCTreeErrorKind::NewTransactionError,
+                ))?;
         }
-        return Err(Report::new(BlockChainTreeError::BlockChainTreeError(
-            BCTreeErrorKind::NewTransactionError,
-        ))
-        .attach_printable("not implemented yet"));
+
+        self.trxs_pool.push_front(Box::new(tr));
+        return Ok(());
     }
 
-    pub fn pop_last_transactions(&mut self) -> Option<Vec<TransactionToken>> {
+    pub fn pop_last_transactions(&mut self) -> Option<Vec<Box<dyn Transactionable>>> {
         if self.trxs_pool.is_empty() {
             return None;
         }
@@ -1202,7 +1191,7 @@ impl BlockChainTree {
         if transactions_amount > self.trxs_pool.len() {
             transactions_amount = self.trxs_pool.len();
         }
-        let mut to_return: Vec<TransactionToken> = Vec::with_capacity(transactions_amount);
+        let mut to_return: Vec<Box<dyn Transactionable>> = Vec::with_capacity(transactions_amount);
 
         let mut counter = 0;
 
@@ -1219,7 +1208,7 @@ impl BlockChainTree {
         return Some(to_return);
     }
 
-    pub fn get_pool(&mut self) -> &VecDeque<TransactionToken> {
+    pub fn get_pool(&mut self) -> &VecDeque<Box<dyn Transactionable>> {
         return &self.trxs_pool;
     }
 }
