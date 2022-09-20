@@ -13,9 +13,7 @@ pub fn dump_biguint(number: &BigUint, buffer: &mut Vec<u8>) -> Result<(), ToolsE
 
     let amount_of_bunches: usize = number_bytes.len();
     if amount_of_bunches > 255 {
-        return Err(Report::new(ToolsError::Biguint(
-            BiguintErrorKind::Dump,
-        )));
+        return Err(Report::new(ToolsError::Biguint(BiguintErrorKind::Dump)));
     }
 
     buffer.push(amount_of_bunches as u8);
@@ -32,9 +30,11 @@ pub fn load_biguint(data: &[u8]) -> Result<(BigUint, usize), ToolsError> {
     let amount_of_bytes: usize = amount_of_bunches as usize; //*4;
     if data.len() < amount_of_bytes {
         return Err(
-            Report::new(ToolsError::Biguint(BiguintErrorKind::Load)).attach_printable(
-                format!("data = {} // bytes = {}", data.len(), amount_of_bytes),
-            ),
+            Report::new(ToolsError::Biguint(BiguintErrorKind::Load)).attach_printable(format!(
+                "data = {} // bytes = {}",
+                data.len(),
+                amount_of_bytes
+            )),
         );
     }
 

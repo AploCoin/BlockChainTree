@@ -121,25 +121,19 @@ impl Chain {
     pub fn add_block(&mut self, block: &SumTransactionBlock) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::AddingBlock,
-            ))?;
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         let hash = tools::hash(&dump);
 
         self.db
             .put(hash, dump)
             .report()
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::AddingBlock,
-            ))?;
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         self.height_reference
             .put(hash, self.height.to_be_bytes())
             .report()
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::AddingBlock,
-            ))?;
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         self.height += 1;
 
@@ -161,9 +155,11 @@ impl Chain {
         if height > self.height {
             return Ok(None);
         }
-        let dump = self.db.get(height.to_be_bytes()).report().change_context(
-            BlockChainTreeError::Chain(ChainErrorKind::FindByHeight),
-        )?;
+        let dump = self
+            .db
+            .get(height.to_be_bytes())
+            .report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
         if dump.is_none() {
             return Ok(None);
@@ -173,35 +169,34 @@ impl Chain {
 
         if dump[0] == Headers::TransactionBlock as u8 {
             let result = TransactionBlock::parse(&dump[1..], (dump.len() - 1) as u32)
-                .change_context(BlockChainTreeError::Chain(
-                    ChainErrorKind::FindByHeight,
-                ))?;
+                .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
             let block = SumTransactionBlock::new(Some(result), None);
 
             return Ok(Some(block));
         } else if dump[0] == Headers::SummarizeBlock as u8 {
-            let result = SummarizeBlock::parse(&dump[1..]).change_context(
-                BlockChainTreeError::Chain(ChainErrorKind::FindByHeight),
-            )?;
+            let result = SummarizeBlock::parse(&dump[1..])
+                .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
             let block = SumTransactionBlock::new(None, Some(result));
             return Ok(Some(block));
         }
 
-        Err(Report::new(BlockChainTreeError::Chain(
-            ChainErrorKind::FindByHeight,
-        ))
-        .attach_printable("block type not found"))
+        Err(
+            Report::new(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))
+                .attach_printable("block type not found"),
+        )
     }
 
     pub fn find_by_hash(
         &self,
         hash: &[u8; 32],
     ) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
-        let result = self.height_reference.get(hash).report().change_context(
-            BlockChainTreeError::Chain(ChainErrorKind::FindByHashE),
-        )?;
+        let result = self
+            .height_reference
+            .get(hash)
+            .report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
 
         if result.is_none() {
             return Ok(None);
@@ -210,9 +205,7 @@ impl Chain {
 
         let block = self
             .find_by_height(height)
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::FindByHashE,
-            ))?;
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
 
         Ok(block)
     }
@@ -221,33 +214,23 @@ impl Chain {
         let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_config = root + CONFIG_FILE;
 
-        let mut file =
-            File::create(path_config)
-                .report()
-                .change_context(BlockChainTreeError::Chain(
-                    ChainErrorKind::DumpConfig,
-                ))?;
-
-        file
-            .write_all(&self.height.to_be_bytes())
+        let mut file = File::create(path_config)
             .report()
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::DumpConfig,
-            ))
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))?;
+
+        file.write_all(&self.height.to_be_bytes())
+            .report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write height")?;
 
         file.write_all(&self.genesis_hash)
             .report()
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::DumpConfig,
-            ))
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write genesis block")?;
 
         file.write_all(&self.difficulty)
             .report()
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::DumpConfig,
-            ))
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failes to write difficulty")?;
 
         Ok(())
@@ -404,8 +387,7 @@ impl DerivativeChain {
             ))
             .attach_printable("failed to add block to db")?;
 
-        self
-            .height_reference
+        self.height_reference
             .put(hash, self.height.to_be_bytes())
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
@@ -476,9 +458,11 @@ impl DerivativeChain {
         }
         let height = u64::from_be_bytes(result.unwrap().try_into().unwrap());
 
-        let block = self.find_by_height(height).change_context(
-            BlockChainTreeError::DerivativeChain(DerivChainErrorKind::FindByHash),
-        )?;
+        let block =
+            self.find_by_height(height)
+                .change_context(BlockChainTreeError::DerivativeChain(
+                    DerivChainErrorKind::FindByHash,
+                ))?;
 
         Ok(block)
     }
@@ -582,9 +566,7 @@ impl BlockChainTree {
         // open summary db
         let summary_db = DB::<MultiThreaded>::open_default(summary_db_path)
             .report()
-            .change_context(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::Init,
-            ))
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to open summary db")?;
 
         let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
@@ -592,9 +574,7 @@ impl BlockChainTree {
         // open old summary db
         let old_summary_db = DB::<MultiThreaded>::open_default(old_summary_db_path)
             .report()
-            .change_context(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::Init,
-            ))
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to open old summary db")?;
 
         // read transactions pool
@@ -603,18 +583,14 @@ impl BlockChainTree {
 
         let mut file = File::open(pool_path)
             .report()
-            .change_context(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::Init,
-            ))
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to open transactions pool")?;
 
         // read amount of transactions
         let mut buf: [u8; 8] = [0; 8];
         file.read_exact(&mut buf)
             .report()
-            .change_context(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::Init,
-            ))
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to read amount of transactions")?;
 
         let trxs_amount = u64::from_be_bytes(buf);
@@ -629,9 +605,7 @@ impl BlockChainTree {
         for _ in 0..trxs_amount {
             file.read_exact(&mut buf)
                 .report()
-                .change_context(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::Init,
-                ))
+                .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
                 .attach_printable("failed to read transaction size")?;
 
             let tr_size = u32::from_be_bytes(buf);
@@ -640,9 +614,7 @@ impl BlockChainTree {
 
             file.read_exact(&mut transaction_buffer)
                 .report()
-                .change_context(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::Init,
-                ))
+                .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
                 .attach_printable("failed to read transaction")?;
 
             if transaction_buffer[0] == 0 {
@@ -662,9 +634,8 @@ impl BlockChainTree {
         }
 
         // opening main chain
-        let main_chain = Chain::new().change_context(BlockChainTreeError::BlockChainTree(
-            BCTreeErrorKind::Init,
-        ))?;
+        let main_chain = Chain::new()
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))?;
 
         Ok(BlockChainTree {
             trxs_pool,
@@ -736,12 +707,11 @@ impl BlockChainTree {
         //write transactions
         for transaction in self.trxs_pool.iter() {
             // get dump
-            let dump =
-                transaction
-                    .dump()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::DumpPool,
-                    ))?;
+            let dump = transaction
+                .dump()
+                .change_context(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::DumpPool,
+                ))?;
 
             // write transaction size
             file.write_all(&(dump.len() as u32).to_be_bytes())
@@ -968,8 +938,7 @@ impl BlockChainTree {
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
                 )?;
 
-                self
-                    .summary_db
+                self.summary_db
                     .as_mut()
                     .unwrap()
                     .put(addr, &dump)
@@ -1061,9 +1030,7 @@ impl BlockChainTree {
     pub fn get_funds(&mut self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
         let result = self.summary_db.as_mut().unwrap().get(addr);
         match result {
-            Ok(None) => {
-                Ok(Zero::zero())
-            }
+            Ok(None) => Ok(Zero::zero()),
             Ok(Some(prev)) => {
                 let res = tools::load_biguint(&prev).change_context(
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetFunds),
@@ -1072,24 +1039,20 @@ impl BlockChainTree {
                 let previous = res.0;
                 Ok(previous)
             }
-            Err(_) => {
-                Err(Report::new(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::GetDerivChain,
-                ))
-                .attach_printable(format!(
-                    "failed to get data from summary db at address: {}",
-                    std::str::from_utf8(addr).unwrap()
-                )))
-            }
+            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::GetDerivChain,
+            ))
+            .attach_printable(format!(
+                "failed to get data from summary db at address: {}",
+                std::str::from_utf8(addr).unwrap()
+            ))),
         }
     }
 
     pub fn get_old_funds(&mut self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
         let result = self.old_summary_db.as_mut().unwrap().get(addr);
         match result {
-            Ok(None) => {
-                Ok(Zero::zero())
-            }
+            Ok(None) => Ok(Zero::zero()),
             Ok(Some(prev)) => {
                 let res = tools::load_biguint(&prev).change_context(
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetOldFunds),
@@ -1097,11 +1060,9 @@ impl BlockChainTree {
                 let previous = res.0;
                 Ok(previous)
             }
-            Err(_) => {
-                Err(Report::new(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::GetOldFunds,
-                )))
-            }
+            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::GetOldFunds,
+            ))),
         }
     }
 

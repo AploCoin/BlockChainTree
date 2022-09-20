@@ -228,25 +228,23 @@ impl TransactionBlock {
         to_return.extend(self.merkle_tree_root.iter());
 
         // default info
-        self.default_info.dump(&mut to_return).change_context(
-            BlockError::TransactionBlock(TxBlockErrorKind::Dump),
-        )?;
+        self.default_info
+            .dump(&mut to_return)
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))?;
 
         // fee
-        tools::dump_biguint(&self.fee, &mut to_return).change_context(
-            BlockError::TransactionBlock(TxBlockErrorKind::Dump),
-        )?;
+        tools::dump_biguint(&self.fee, &mut to_return)
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))?;
 
         // amount of transactions
-        let amount_of_transactions = 
-                if self.transactions.len() > 0xFFFF {
-                return Err(Report::new(BlockError::TransactionBlock(
-                    TxBlockErrorKind::Dump,
-                ))
-                .attach_printable(format!("transactions: {}", self.transactions.len())));
-            } else {
-                self.transactions.len() as u16
-            };
+        let amount_of_transactions = if self.transactions.len() > 0xFFFF {
+            return Err(
+                Report::new(BlockError::TransactionBlock(TxBlockErrorKind::Dump))
+                    .attach_printable(format!("transactions: {}", self.transactions.len())),
+            );
+        } else {
+            self.transactions.len() as u16
+        };
 
         to_return.extend(amount_of_transactions.to_be_bytes().iter());
 
@@ -272,16 +270,14 @@ impl TransactionBlock {
         offset += 32; // inc offset
 
         // default info
-        let default_info = BasicInfo::parse(&data[offset..]).change_context(
-            BlockError::TransactionBlock(TxBlockErrorKind::Parse),
-        )?;
+        let default_info = BasicInfo::parse(&data[offset..])
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))?;
 
         offset += default_info.get_dump_size(); // inc offset
 
         // fee
-        let (fee, _offset) = tools::load_biguint(&data[offset..]).change_context(
-            BlockError::TransactionBlock(TxBlockErrorKind::Parse),
-        )?;
+        let (fee, _offset) = tools::load_biguint(&data[offset..])
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))?;
 
         offset += _offset; // inc offset
 
@@ -299,9 +295,8 @@ impl TransactionBlock {
 
             offset += 4; // inc offset
 
-            let header = Headers::from_u8(data[offset]).change_context(
-                BlockError::TransactionBlock(TxBlockErrorKind::Parse),
-            )?;
+            let header = Headers::from_u8(data[offset])
+                .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))?;
             offset += 1;
 
             //let mut trtk: TransactionToken = TransactionToken::new(None, None);
@@ -310,9 +305,7 @@ impl TransactionBlock {
                     &data[offset..offset + (transaction_size as usize)],
                     transaction_size as u64,
                 )
-                .change_context(BlockError::TransactionBlock(
-                    TxBlockErrorKind::Parse,
-                ))?,
+                .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))?,
                 Headers::Token => {
                     return Err(Report::new(BlockError::NotImplemented(
                         NotImplementedKind::Token,
@@ -372,9 +365,9 @@ impl TokenBlock {
 
     pub fn get_dump_size(&self) -> usize {
         self.default_info.get_dump_size()
-        + self.token_signature.len()
-        + 1
-        + self.payment_transaction.get_dump_size()
+            + self.token_signature.len()
+            + 1
+            + self.payment_transaction.get_dump_size()
     }
 
     pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
@@ -496,12 +489,10 @@ impl SummarizeBlock {
         to_return.push(Headers::SummarizeBlock as u8);
 
         // dump transaction
-        let mut transaction_dump =
-            self.founder_transaction
-                .dump()
-                .change_context(BlockError::SummarizeBlock(
-                    SummarizeBlockErrorKind::Dump,
-                ))?;
+        let mut transaction_dump = self
+            .founder_transaction
+            .dump()
+            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Dump))?;
 
         to_return.extend((transaction_dump.len() as u64).to_be_bytes());
         to_return.append(&mut transaction_dump);
@@ -514,10 +505,10 @@ impl SummarizeBlock {
 
     pub fn parse(data: &[u8]) -> Result<SummarizeBlock, BlockError> {
         if data.len() <= 8 {
-            return Err(Report::new(BlockError::SummarizeBlock(
-                SummarizeBlockErrorKind::Parse,
-            ))
-            .attach_printable("data length <= 8"));
+            return Err(
+                Report::new(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))
+                    .attach_printable("data length <= 8"),
+            );
         }
         let mut offset: usize = 0;
 
@@ -526,16 +517,16 @@ impl SummarizeBlock {
             u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize - 1;
         offset += 8;
         if data.len() < transaction_size + 8 {
-            return Err(Report::new(BlockError::SummarizeBlock(
-                SummarizeBlockErrorKind::Parse,
-            ))
-            .attach_printable("data length < tx size + 8"));
+            return Err(
+                Report::new(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))
+                    .attach_printable("data length < tx size + 8"),
+            );
         }
         if data[offset] != Headers::Transaction as u8 {
-            return Err(Report::new(BlockError::SummarizeBlock(
-                SummarizeBlockErrorKind::Parse,
-            ))
-            .attach_printable("headers not found"));
+            return Err(
+                Report::new(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))
+                    .attach_printable("headers not found"),
+            );
         }
         offset += 1;
 
@@ -543,16 +534,13 @@ impl SummarizeBlock {
             &data[offset..offset + transaction_size],
             transaction_size as u64,
         )
-        .change_context(BlockError::SummarizeBlock(
-            SummarizeBlockErrorKind::Parse,
-        ))?;
+        .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))?;
 
         offset += transaction_size;
 
         // parse default info
-        let default_info = BasicInfo::parse(&data[offset..]).change_context(
-            BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse),
-        )?;
+        let default_info = BasicInfo::parse(&data[offset..])
+            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))?;
 
         Ok(SummarizeBlock {
             default_info,
@@ -561,9 +549,9 @@ impl SummarizeBlock {
     }
 
     pub fn hash(&self) -> Result<[u8; 32], BlockError> {
-        let result = self.dump().change_context(BlockError::SummarizeBlock(
-            SummarizeBlockErrorKind::Hash,
-        ));
+        let result = self
+            .dump()
+            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Hash));
 
         let dump: Vec<u8> = unsafe { result.unwrap_unchecked() };
 

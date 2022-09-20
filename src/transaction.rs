@@ -126,7 +126,6 @@ impl Transactionable for Transaction {
         let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
 
         Box::new(result)
-
     }
 
     fn verify(&self, prev_hash: &[u8; 32]) -> Result<bool, TransactionError> {
@@ -154,12 +153,8 @@ impl Transactionable for Transaction {
         let result = verifier.verify_ecdsa(&message, &signature, &sender);
 
         match result {
-            Err(_) => {
-                Ok(false)
-            }
-            Ok(_) => {
-                Ok(true)
-            }
+            Err(_) => Ok(false),
+            Ok(_) => Ok(true),
         }
     }
 
@@ -206,10 +201,8 @@ impl Transactionable for Transaction {
         let mut index: usize = 0;
 
         if data.len() <= 138 {
-            return Err(
-                Report::new(TransactionError::Tx(TxErrorKind::Parse))
-                    .attach_printable("Data length <= 138"),
-            );
+            return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
+                .attach_printable("Data length <= 138"));
         }
 
         // parsing sender address
@@ -235,10 +228,8 @@ impl Transactionable for Transaction {
 
         index += idx;
         if index != size as usize {
-            return Err(
-                Report::new(TransactionError::Tx(TxErrorKind::Parse))
-                    .attach_printable("Index != Tx size"),
-            );
+            return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
+                .attach_printable("Index != Tx size"));
         }
 
         Ok(Transaction::new(
