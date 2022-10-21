@@ -953,15 +953,13 @@ impl BlockChainTree {
 
                 Ok(())
             }
-            Err(_) => {
-                return Err(Report::new(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::AddFunds,
-                ))
-                .attach_printable(format!(
-                    "failed to get data from address: {}",
-                    std::str::from_utf8(addr).unwrap()
-                )));
-            }
+            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::AddFunds,
+            ))
+            .attach_printable(format!(
+                "failed to get data from address: {}",
+                std::str::from_utf8(addr).unwrap()
+            ))),
         }
     }
 
@@ -972,15 +970,13 @@ impl BlockChainTree {
     ) -> Result<(), BlockChainTreeError> {
         let result = self.summary_db.as_mut().unwrap().get(addr);
         match result {
-            Ok(None) => {
-                return Err(Report::new(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::DecreaseFunds,
-                ))
-                .attach_printable(format!(
-                    "address: {} doesn't have any coins",
-                    std::str::from_utf8(addr).unwrap()
-                )));
-            }
+            Ok(None) => Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::DecreaseFunds,
+            ))
+            .attach_printable(format!(
+                "address: {} doesn't have any coins",
+                std::str::from_utf8(addr).unwrap()
+            ))),
             Ok(Some(prev)) => {
                 let res = tools::load_biguint(&prev).change_context(
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DecreaseFunds),
@@ -1015,15 +1011,13 @@ impl BlockChainTree {
 
                 Ok(())
             }
-            Err(_) => {
-                return Err(Report::new(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::DecreaseFunds,
-                ))
-                .attach_printable(format!(
-                    "failed to get data from address: {}",
-                    std::str::from_utf8(addr).unwrap()
-                )));
-            }
+            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::DecreaseFunds,
+            ))
+            .attach_printable(format!(
+                "failed to get data from address: {}",
+                std::str::from_utf8(addr).unwrap()
+            ))),
         }
     }
 
