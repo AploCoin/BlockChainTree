@@ -26,6 +26,12 @@ pub fn find_closest_power_of_2(number: usize) -> usize {
     power
 }
 
+impl Default for MerkleTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MerkleTree {
     pub fn new() -> MerkleTree {
         MerkleTree {
@@ -47,12 +53,12 @@ impl MerkleTree {
         let mut hasher = Sha256::new();
 
         let mut hash_input: [u8; 32];
-        if self.array_representation[left_child] != None {
+        if self.array_representation[left_child].is_some() {
             hash_input = self.array_representation[left_child].unwrap();
         } else {
             hash_input = PADDING_HASH;
         }
-        if self.array_representation[right_child] != None {
+        if self.array_representation[right_child].is_some() {
             for (idx, hinput) in hash_input.iter_mut().enumerate() {
                 *hinput &= self.array_representation[right_child].unwrap()[idx];
             }

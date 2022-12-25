@@ -9,7 +9,8 @@ use std::convert::TryInto;
 use crate::dump_headers::Headers;
 use hex::ToHex;
 use num_traits::Zero;
-use rocksdb::{DBWithThreadMode as DB, MultiThreaded, Options};
+//use rocksdb::{DBWithThreadMode as DB, MultiThreaded, Options};
+use sled::Db;
 use std::fs;
 use std::fs::File;
 use std::io::Read;
@@ -51,8 +52,8 @@ static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
 pub struct Chain {
-    db: DB<MultiThreaded>,
-    height_reference: DB<MultiThreaded>,
+    db: Db,
+    height_reference: Db,
     height: u64,
     genesis_hash: [u8; 32],
     difficulty: [u8; 32],
@@ -70,13 +71,13 @@ impl Chain {
         let path_height = Path::new(&path_height_st);
 
         // open blocks DB
-        let db = DB::<MultiThreaded>::open_default(path_blocks)
+        let db = sled::open(path_blocks)
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
             .attach_printable("failed to open blocks db")?;
 
         // open height references DB
-        let height_reference = DB::<MultiThreaded>::open_default(path_reference)
+        let height_reference = sled::open(path_reference)
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
             .attach_printable("failed to open references db")?;
@@ -118,7 +119,10 @@ impl Chain {
         })
     }
 
-    pub fn add_block(&mut self, block: &SumTransactionBlock) -> Result<(), BlockChainTreeError> {
+    pub async fn add_block(
+        &mut self,
+        block: &SumTransactionBlock,
+    ) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
@@ -126,16 +130,28 @@ impl Chain {
         let hash = tools::hash(&dump);
 
         self.db
-            .put(hash, dump)
+            .insert(self.height.to_be_bytes(), dump)
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         self.height_reference
-            .put(hash, self.height.to_be_bytes())
+            .insert(hash, &self.height.to_be_bytes())
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         self.height += 1;
+
+        self.db
+            .flush_async()
+            .await
+            .report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         Ok(())
     }
@@ -192,16 +208,19 @@ impl Chain {
         &self,
         hash: &[u8; 32],
     ) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
-        let result = self
+        let height = match self
             .height_reference
             .get(hash)
             .report()
-            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
-
-        if result.is_none() {
-            return Ok(None);
-        }
-        let height = u64::from_be_bytes(result.unwrap().try_into().unwrap());
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?
+        {
+            None => {
+                return Ok(None);
+            }
+            Some(h) => {
+                u64::from_be_bytes(h.iter().copied().collect::<Vec<u8>>().try_into().unwrap())
+            }
+        };
 
         let block = self
             .find_by_height(height)
@@ -248,7 +267,7 @@ impl Chain {
         let path_reference = Path::new(&path_references_st);
 
         // open blocks DB
-        let db = DB::<MultiThreaded>::open_default(path_blocks)
+        let db = sled::open(path_blocks)
             .report()
             .change_context(BlockChainTreeError::Chain(
                 ChainErrorKind::InitWithoutConfig,
@@ -256,7 +275,7 @@ impl Chain {
             .attach_printable("failed to open blocks db")?;
 
         // open height references DB
-        let height_reference = DB::<MultiThreaded>::open_default(path_reference)
+        let height_reference = sled::open(path_reference)
             .report()
             .change_context(BlockChainTreeError::Chain(
                 ChainErrorKind::InitWithoutConfig,
@@ -278,8 +297,8 @@ impl Chain {
 }
 
 pub struct DerivativeChain {
-    db: DB<MultiThreaded>,
-    height_reference: DB<MultiThreaded>,
+    db: Db,
+    height_reference: Db,
     height: u64,
     global_height: u64,
     genesis_hash: [u8; 32],
@@ -298,7 +317,7 @@ impl DerivativeChain {
         let path_height = Path::new(&path_height_st);
 
         // open blocks DB
-        let db = DB::<MultiThreaded>::open_default(path_blocks)
+        let db = sled::open(path_blocks)
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
                 DerivChainErrorKind::Init,
@@ -306,7 +325,7 @@ impl DerivativeChain {
             .attach_printable("failed to open blocks db")?;
 
         // open height references DB
-        let height_reference = DB::<MultiThreaded>::open_default(path_reference)
+        let height_reference = sled::open(path_reference)
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
                 DerivChainErrorKind::Init,
@@ -370,7 +389,7 @@ impl DerivativeChain {
         })
     }
 
-    pub fn add_block(&mut self, block: &TokenBlock) -> Result<(), BlockChainTreeError> {
+    pub async fn add_block(&mut self, block: &TokenBlock) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::DerivativeChain(
@@ -380,7 +399,7 @@ impl DerivativeChain {
         let hash = tools::hash(&dump);
 
         self.db
-            .put(self.height.to_be_bytes(), dump)
+            .insert(self.height.to_be_bytes(), dump)
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
                 DerivChainErrorKind::Init,
@@ -388,7 +407,7 @@ impl DerivativeChain {
             .attach_printable("failed to add block to db")?;
 
         self.height_reference
-            .put(hash, self.height.to_be_bytes())
+            .insert(hash, &self.height.to_be_bytes())
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
                 DerivChainErrorKind::Init,
@@ -396,6 +415,18 @@ impl DerivativeChain {
             .attach_printable("failed to add reference to db")?;
 
         self.height += 1;
+
+        self.db
+            .flush_async()
+            .await
+            .report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         Ok(())
     }
@@ -444,19 +475,19 @@ impl DerivativeChain {
     }
 
     pub fn find_by_hash(&self, hash: &[u8; 32]) -> Result<Option<TokenBlock>, BlockChainTreeError> {
-        let result = self
+        let height = match self
             .height_reference
             .get(hash)
             .report()
-            .change_context(BlockChainTreeError::DerivativeChain(
-                DerivChainErrorKind::FindByHash,
-            ))
-            .attach_printable("failed to get height")?;
-
-        if result.is_none() {
-            return Ok(None);
-        }
-        let height = u64::from_be_bytes(result.unwrap().try_into().unwrap());
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?
+        {
+            None => {
+                return Ok(None);
+            }
+            Some(h) => {
+                u64::from_be_bytes(h.iter().copied().collect::<Vec<u8>>().try_into().unwrap())
+            }
+        };
 
         let block =
             self.find_by_height(height)
@@ -522,7 +553,7 @@ impl DerivativeChain {
         let path_reference = Path::new(&path_references_st);
 
         // open blocks DB
-        let db = DB::<MultiThreaded>::open_default(path_blocks)
+        let db = sled::open(path_blocks)
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
                 DerivChainErrorKind::InitWithoutConfig,
@@ -530,7 +561,7 @@ impl DerivativeChain {
             .attach_printable("failed to open blocks db")?;
 
         // open height references DB
-        let height_reference = DB::<MultiThreaded>::open_default(path_reference)
+        let height_reference = sled::open(path_reference)
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
                 DerivChainErrorKind::InitWithoutConfig,
@@ -554,8 +585,8 @@ impl DerivativeChain {
 
 pub struct BlockChainTree {
     trxs_pool: VecDeque<Box<dyn Transactionable>>,
-    summary_db: Option<DB<MultiThreaded>>,
-    old_summary_db: Option<DB<MultiThreaded>>,
+    summary_db: Option<Db>,
+    old_summary_db: Option<Db>,
     main_chain: Chain,
 }
 
@@ -564,7 +595,7 @@ impl BlockChainTree {
         let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
 
         // open summary db
-        let summary_db = DB::<MultiThreaded>::open_default(summary_db_path)
+        let summary_db = sled::open(summary_db_path)
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to open summary db")?;
@@ -572,7 +603,7 @@ impl BlockChainTree {
         let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
 
         // open old summary db
-        let old_summary_db = DB::<MultiThreaded>::open_default(old_summary_db_path)
+        let old_summary_db = sled::open(old_summary_db_path)
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to open old summary db")?;
@@ -649,7 +680,7 @@ impl BlockChainTree {
         let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
 
         // open summary db
-        let summary_db = DB::<MultiThreaded>::open_default(summary_db_path)
+        let summary_db = sled::open(summary_db_path)
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::InitWithoutConfig,
@@ -659,7 +690,7 @@ impl BlockChainTree {
         let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
 
         // open old summary db
-        let old_summary_db = DB::<MultiThreaded>::open_default(old_summary_db_path)
+        let old_summary_db = sled::open(old_summary_db_path)
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::InitWithoutConfig,
@@ -675,6 +706,13 @@ impl BlockChainTree {
                 BCTreeErrorKind::InitWithoutConfig,
             ))
             .attach_printable("failed to open main chain")?;
+
+        let _ = fs::create_dir(Path::new(DERIVATIVE_CHAINS_DIRECTORY));
+        // .report()
+        // .change_context(BlockChainTreeError::BlockChainTree(
+        //     BCTreeErrorKind::CreateDerivChain,
+        // ))
+        // .attach_printable("failed to create root folder for derivatives")?;
 
         Ok(BlockChainTree {
             trxs_pool,
@@ -764,7 +802,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         genesis_hash: &[u8; 32],
         global_height: u64,
-    ) -> Result<DerivativeChain, BlockChainTreeError> {
+    ) -> Result<Box<DerivativeChain>, BlockChainTreeError> {
         let mut root_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr: String = addr.encode_hex::<String>();
         root_path += &hex_addr;
@@ -804,7 +842,7 @@ impl BlockChainTree {
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
 
-        Ok(chain)
+        Ok(Box::new(chain))
     }
 
     pub fn check_main_folders() -> Result<(), BlockChainTreeError> {
@@ -897,7 +935,7 @@ impl BlockChainTree {
 
     // summary data bases functions
 
-    pub fn add_funds(
+    pub async fn add_funds(
         &mut self,
         addr: &[u8; 33],
         funds: &BigUint,
@@ -913,7 +951,19 @@ impl BlockChainTree {
                 self.summary_db
                     .as_mut()
                     .unwrap()
-                    .put(addr, &dump)
+                    .insert(addr, dump)
+                    .report()
+                    .change_context(BlockChainTreeError::BlockChainTree(
+                        BCTreeErrorKind::AddFunds,
+                    ))
+                    .attach_printable(format!(
+                        "failed to create and add funds at address: {}",
+                        std::str::from_utf8(addr).unwrap()
+                    ))?;
+
+                unsafe { self.summary_db.as_mut().unwrap_unchecked() }
+                    .flush_async()
+                    .await
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
@@ -941,13 +991,25 @@ impl BlockChainTree {
                 self.summary_db
                     .as_mut()
                     .unwrap()
-                    .put(addr, &dump)
+                    .insert(addr, dump)
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
                     ))
                     .attach_printable(format!(
                         "failed to put funds at address: {}",
+                        std::str::from_utf8(addr).unwrap()
+                    ))?;
+
+                unsafe { self.summary_db.as_mut().unwrap_unchecked() }
+                    .flush_async()
+                    .await
+                    .report()
+                    .change_context(BlockChainTreeError::BlockChainTree(
+                        BCTreeErrorKind::AddFunds,
+                    ))
+                    .attach_printable(format!(
+                        "failed to create and add funds at address: {}",
                         std::str::from_utf8(addr).unwrap()
                     ))?;
 
@@ -963,7 +1025,7 @@ impl BlockChainTree {
         }
     }
 
-    pub fn decrease_funds(
+    pub async fn decrease_funds(
         &mut self,
         addr: &[u8; 33],
         funds: &BigUint,
@@ -999,13 +1061,25 @@ impl BlockChainTree {
                 self.summary_db
                     .as_mut()
                     .unwrap()
-                    .put(addr, &dump)
+                    .insert(addr, dump)
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::DecreaseFunds,
                     ))
                     .attach_printable(format!(
                         "failed to put funds at address: {}",
+                        std::str::from_utf8(addr).unwrap()
+                    ))?;
+
+                unsafe { self.summary_db.as_mut().unwrap_unchecked() }
+                    .flush_async()
+                    .await
+                    .report()
+                    .change_context(BlockChainTreeError::BlockChainTree(
+                        BCTreeErrorKind::AddFunds,
+                    ))
+                    .attach_printable(format!(
+                        "failed to create and add funds at address: {}",
                         std::str::from_utf8(addr).unwrap()
                     ))?;
 
@@ -1067,7 +1141,7 @@ impl BlockChainTree {
         self.old_summary_db = None;
         self.summary_db = None;
 
-        DB::<MultiThreaded>::destroy(&Options::default(), old_sum_path)
+        fs::remove_dir_all(old_sum_path)
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
@@ -1088,7 +1162,7 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to create folder for an old summarize db")?;
 
-        let result = DB::<MultiThreaded>::open_default(sum_path)
+        let result = sled::open(sum_path)
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
@@ -1097,7 +1171,7 @@ impl BlockChainTree {
 
         self.summary_db = Some(result);
 
-        let result = DB::<MultiThreaded>::open_default(old_sum_path)
+        let result = sled::open(old_sum_path)
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
@@ -1109,7 +1183,7 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub fn new_transaction(&mut self, tr: Transaction) -> Result<(), BlockChainTreeError> {
+    pub async fn new_transaction(&mut self, tr: Transaction) -> Result<(), BlockChainTreeError> {
         // if it is in first bunch of transactions
         // to be added to blockchain.
         // AND if it is not a last block
@@ -1118,11 +1192,13 @@ impl BlockChainTree {
             && self.main_chain.get_height() as usize + 1 % BLOCKS_PER_ITERATION != 0
         {
             self.decrease_funds(tr.get_sender(), tr.get_amount())
+                .await
                 .change_context(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::NewTransaction,
                 ))?;
 
             self.add_funds(tr.get_sender(), tr.get_amount())
+                .await
                 .change_context(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::NewTransaction,
                 ))?;
