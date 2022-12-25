@@ -4,7 +4,6 @@ use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
 use std::fmt::Debug;
-use std::mem::transmute_copy;
 
 use crate::dump_headers::Headers;
 use secp256k1::ecdsa::Signature;
@@ -206,11 +205,11 @@ impl Transactionable for Transaction {
         }
 
         // parsing sender address
-        let sender: [u8; 33] = unsafe { transmute_copy(&data[index]) };
+        let sender: [u8; 33] = unsafe { data[index..index + 33].try_into().unwrap_unchecked() };
         index += 33;
 
         // parsing receiver address
-        let receiver: [u8; 33] = unsafe { transmute_copy(&data[index]) };
+        let receiver: [u8; 33] = unsafe { data[index..index + 33].try_into().unwrap_unchecked() };
         index += 33;
 
         // parsing timestamp
@@ -218,7 +217,7 @@ impl Transactionable for Transaction {
         index += 8;
 
         // parsing signature
-        let signature: [u8; 64] = unsafe { transmute_copy(&data[index]) };
+        let signature: [u8; 64] = unsafe { data[index..index + 64].try_into().unwrap_unchecked() };
         index += 64;
 
         // parsing amount
