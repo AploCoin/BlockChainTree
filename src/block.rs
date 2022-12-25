@@ -7,7 +7,7 @@ use byteorder::{BigEndian, ReadBytesExt};
 use num_bigint::BigUint;
 use std::convert::TryInto;
 use std::mem::transmute;
-use std::mem::transmute_copy;
+//use std::mem::transmute_copy;
 
 use error_stack::{Report, Result, ResultExt};
 
@@ -103,11 +103,13 @@ impl BasicInfo {
         index += 8;
 
         // parsing previous hash
-        let previous_hash: [u8; 32] = unsafe { transmute_copy(&data[index]) };
+        let previous_hash: [u8; 32] =
+            unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
 
         // parsing current hash
-        let current_hash: [u8; 32] = unsafe { transmute_copy(&data[index]) };
+        let current_hash: [u8; 32] =
+            unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
 
         // parsing height
@@ -115,7 +117,7 @@ impl BasicInfo {
         index += 8;
 
         // parsing difficulty
-        let difficulty: [u8; 32] = unsafe { transmute_copy(&data[index]) };
+        let difficulty: [u8; 32] = unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
 
         // parsing PoW
