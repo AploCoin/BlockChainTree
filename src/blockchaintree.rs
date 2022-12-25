@@ -130,7 +130,7 @@ impl Chain {
         let hash = tools::hash(&dump);
 
         self.db
-            .insert(&self.height.to_be_bytes(), dump)
+            .insert(self.height.to_be_bytes(), dump)
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
@@ -217,13 +217,9 @@ impl Chain {
             None => {
                 return Ok(None);
             }
-            Some(h) => u64::from_be_bytes(
-                h.iter()
-                    .map(|v| *v)
-                    .collect::<Vec<u8>>()
-                    .try_into()
-                    .unwrap(),
-            ),
+            Some(h) => {
+                u64::from_be_bytes(h.iter().copied().collect::<Vec<u8>>().try_into().unwrap())
+            }
         };
 
         let block = self
@@ -403,7 +399,7 @@ impl DerivativeChain {
         let hash = tools::hash(&dump);
 
         self.db
-            .insert(&self.height.to_be_bytes(), dump)
+            .insert(self.height.to_be_bytes(), dump)
             .report()
             .change_context(BlockChainTreeError::DerivativeChain(
                 DerivChainErrorKind::Init,
@@ -488,13 +484,9 @@ impl DerivativeChain {
             None => {
                 return Ok(None);
             }
-            Some(h) => u64::from_be_bytes(
-                h.iter()
-                    .map(|v| *v)
-                    .collect::<Vec<u8>>()
-                    .try_into()
-                    .unwrap(),
-            ),
+            Some(h) => {
+                u64::from_be_bytes(h.iter().copied().collect::<Vec<u8>>().try_into().unwrap())
+            }
         };
 
         let block =
