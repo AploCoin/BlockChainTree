@@ -9,7 +9,6 @@ use std::convert::TryInto;
 use crate::dump_headers::Headers;
 use hex::ToHex;
 use num_traits::Zero;
-//use rocksdb::{DBWithThreadMode as DB, MultiThreaded, Options};
 use sled::Db;
 use std::fs;
 use std::fs::File;
@@ -17,6 +16,8 @@ use std::io::Read;
 use std::io::Write;
 use std::path::Path;
 use std::str;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
 use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -51,12 +52,13 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
+#[derive(Clone)]
 pub struct Chain {
     db: Db,
     height_reference: Db,
-    height: u64,
+    height: Arc<Mutex<u64>>,
     genesis_hash: [u8; 32],
-    difficulty: [u8; 32],
+    difficulty: Arc<Mutex<[u8; 32]>>,
 }
 
 impl Chain {
@@ -113,9 +115,9 @@ impl Chain {
         Ok(Chain {
             db,
             height_reference,
-            height,
+            height: Arc::new(Mutex::new(height)),
             genesis_hash,
-            difficulty,
+            difficulty: Arc::new(Mutex::new(difficulty)),
         })
     }
 
@@ -129,17 +131,22 @@ impl Chain {
 
         let hash = tools::hash(&dump);
 
+        let mut height = self.height.lock().await;
+        let height_bytes = height.to_be_bytes();
+
         self.db
-            .insert(self.height.to_be_bytes(), dump)
+            .insert(&height_bytes, dump)
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         self.height_reference
-            .insert(hash, &self.height.to_be_bytes())
+            .insert(hash, &height_bytes)
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
-        self.height += 1;
+        *height += 1;
+
+        drop(height);
 
         self.db
             .flush_async()
@@ -156,21 +163,23 @@ impl Chain {
         Ok(())
     }
 
-    pub fn get_height(&self) -> u64 {
-        self.height
+    pub async fn get_height(&self) -> u64 {
+        *self.height.lock().await
     }
 
-    pub fn get_difficulty(&self) -> [u8; 32] {
-        self.difficulty
+    pub async fn get_difficulty(&self) -> [u8; 32] {
+        self.difficulty.lock().await.clone()
     }
 
-    pub fn find_by_height(
+    pub async fn find_by_height(
         &self,
         height: u64,
     ) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
-        if height > self.height {
+        let chain_height = self.height.lock().await;
+        if height > *chain_height {
             return Ok(None);
         }
+        drop(chain_height);
         let dump = self
             .db
             .get(height.to_be_bytes())
@@ -204,7 +213,7 @@ impl Chain {
         )
     }
 
-    pub fn find_by_hash(
+    pub async fn find_by_hash(
         &self,
         hash: &[u8; 32],
     ) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
@@ -224,12 +233,13 @@ impl Chain {
 
         let block = self
             .find_by_height(height)
+            .await
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
 
         Ok(block)
     }
 
-    pub fn dump_config(&self) -> Result<(), BlockChainTreeError> {
+    pub async fn dump_config(&self) -> Result<(), BlockChainTreeError> {
         let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_config = root + CONFIG_FILE;
 
@@ -237,7 +247,7 @@ impl Chain {
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))?;
 
-        file.write_all(&self.height.to_be_bytes())
+        file.write_all(&self.height.lock().await.to_be_bytes())
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write height")?;
@@ -247,7 +257,7 @@ impl Chain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write genesis block")?;
 
-        file.write_all(&self.difficulty)
+        file.write_all(self.difficulty.lock().await.as_ref())
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failes to write difficulty")?;
@@ -285,14 +295,18 @@ impl Chain {
         Ok(Chain {
             db,
             height_reference,
-            height: 0,
+            height: Arc::new(Mutex::new(0)),
             genesis_hash: *genesis_hash,
-            difficulty: BEGINNING_DIFFICULTY,
+            difficulty: Arc::new(Mutex::new(BEGINNING_DIFFICULTY)),
         })
     }
 
-    pub fn get_last_block(&self) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
-        self.find_by_height(self.height - 1)
+    pub async fn get_last_block(&self) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
+        let height = self.height.lock().await;
+        let last_block_index = *height - 1;
+        drop(height);
+
+        self.find_by_height(last_block_index).await
     }
 }
 
@@ -382,9 +396,9 @@ impl DerivativeChain {
         Ok(DerivativeChain {
             db,
             height_reference,
-            height,
+            height: height,
             genesis_hash,
-            difficulty,
+            difficulty: difficulty,
             global_height,
         })
     }
@@ -583,10 +597,11 @@ impl DerivativeChain {
     }
 }
 
+#[derive(Clone)]
 pub struct BlockChainTree {
-    trxs_pool: VecDeque<Box<dyn Transactionable>>,
-    summary_db: Option<Db>,
-    old_summary_db: Option<Db>,
+    trxs_pool: Arc<Mutex<VecDeque<Box<dyn Transactionable>>>>,
+    summary_db: Arc<Option<Db>>,
+    old_summary_db: Arc<Option<Db>>,
     main_chain: Chain,
 }
 
@@ -669,10 +684,10 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))?;
 
         Ok(BlockChainTree {
-            trxs_pool,
-            summary_db: Some(summary_db),
-            main_chain,
-            old_summary_db: Some(old_summary_db),
+            trxs_pool: Arc::new(Mutex::new(trxs_pool)),
+            summary_db: Arc::new(Some(summary_db)),
+            main_chain: main_chain,
+            old_summary_db: Arc::new(Some(old_summary_db)),
         })
     }
 
@@ -715,14 +730,14 @@ impl BlockChainTree {
         // .attach_printable("failed to create root folder for derivatives")?;
 
         Ok(BlockChainTree {
-            trxs_pool,
-            summary_db: Some(summary_db),
-            main_chain,
-            old_summary_db: Some(old_summary_db),
+            trxs_pool: Arc::new(Mutex::new(trxs_pool)),
+            summary_db: Arc::new(Some(summary_db)),
+            main_chain: main_chain,
+            old_summary_db: Arc::new(Some(old_summary_db)),
         })
     }
 
-    pub fn dump_pool(&self) -> Result<(), BlockChainTreeError> {
+    pub async fn dump_pool(&self) -> Result<(), BlockChainTreeError> {
         let pool_path = String::from(BLOCKCHAIN_DIRECTORY) + TRANSACTIONS_POOL;
         let pool_path = Path::new(&pool_path);
 
@@ -734,8 +749,10 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to open config file")?;
 
+        let trxs_pool = self.trxs_pool.lock().await;
+
         // write transactions amount
-        file.write_all(&(self.trxs_pool.len() as u64).to_be_bytes())
+        file.write_all(&(trxs_pool.len() as u64).to_be_bytes())
             .report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::DumpPool,
@@ -743,7 +760,7 @@ impl BlockChainTree {
             .attach_printable("failed to write amount of transactions")?;
 
         //write transactions
-        for transaction in self.trxs_pool.iter() {
+        for transaction in trxs_pool.iter() {
             // get dump
             let dump = transaction
                 .dump()
@@ -940,7 +957,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        let result = self.summary_db.as_mut().unwrap().get(addr);
+        let result = self.summary_db.as_ref().as_ref().unwrap().get(addr);
         match result {
             Ok(None) => {
                 let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(funds));
@@ -948,10 +965,10 @@ impl BlockChainTree {
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
                 )?;
 
-                self.summary_db
-                    .as_mut()
-                    .unwrap()
-                    .insert(addr, dump)
+                let mut db_ref = Option::as_ref(&self.summary_db);
+                let db = db_ref.as_mut().unwrap();
+
+                db.insert(addr, dump)
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
@@ -961,8 +978,7 @@ impl BlockChainTree {
                         std::str::from_utf8(addr).unwrap()
                     ))?;
 
-                unsafe { self.summary_db.as_mut().unwrap_unchecked() }
-                    .flush_async()
+                db.flush_async()
                     .await
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
@@ -988,10 +1004,10 @@ impl BlockChainTree {
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
                 )?;
 
-                self.summary_db
-                    .as_mut()
-                    .unwrap()
-                    .insert(addr, dump)
+                let mut db_ref = Option::as_ref(&self.summary_db);
+                let db = db_ref.as_mut().unwrap();
+
+                db.insert(addr, dump)
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
@@ -1001,8 +1017,7 @@ impl BlockChainTree {
                         std::str::from_utf8(addr).unwrap()
                     ))?;
 
-                unsafe { self.summary_db.as_mut().unwrap_unchecked() }
-                    .flush_async()
+                db.flush_async()
                     .await
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
@@ -1030,7 +1045,10 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        let result = self.summary_db.as_mut().unwrap().get(addr);
+        let mut db_ref = Option::as_ref(&self.summary_db);
+        let db = db_ref.as_mut().unwrap();
+
+        let result = db.get(addr);
         match result {
             Ok(None) => Err(Report::new(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::DecreaseFunds,
@@ -1058,10 +1076,7 @@ impl BlockChainTree {
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DecreaseFunds),
                 )?;
 
-                self.summary_db
-                    .as_mut()
-                    .unwrap()
-                    .insert(addr, dump)
+                db.insert(addr, dump)
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::DecreaseFunds,
@@ -1071,8 +1086,7 @@ impl BlockChainTree {
                         std::str::from_utf8(addr).unwrap()
                     ))?;
 
-                unsafe { self.summary_db.as_mut().unwrap_unchecked() }
-                    .flush_async()
+                db.flush_async()
                     .await
                     .report()
                     .change_context(BlockChainTreeError::BlockChainTree(
@@ -1095,9 +1109,8 @@ impl BlockChainTree {
         }
     }
 
-    pub fn get_funds(&mut self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        let result = self.summary_db.as_mut().unwrap().get(addr);
-        match result {
+    pub fn get_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
+        match Option::as_ref(&self.summary_db).as_ref().unwrap().get(addr) {
             Ok(None) => Ok(Zero::zero()),
             Ok(Some(prev)) => {
                 let res = tools::load_biguint(&prev).change_context(
@@ -1118,8 +1131,11 @@ impl BlockChainTree {
     }
 
     pub fn get_old_funds(&mut self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        let result = self.old_summary_db.as_mut().unwrap().get(addr);
-        match result {
+        match Option::as_ref(&self.old_summary_db)
+            .as_ref()
+            .unwrap()
+            .get(addr)
+        {
             Ok(None) => Ok(Zero::zero()),
             Ok(Some(prev)) => {
                 let res = tools::load_biguint(&prev).change_context(
@@ -1138,8 +1154,8 @@ impl BlockChainTree {
         let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
         let sum_path = Path::new(AMMOUNT_SUMMARY);
 
-        self.old_summary_db = None;
-        self.summary_db = None;
+        self.old_summary_db = Arc::new(None);
+        self.summary_db = Arc::new(None);
 
         fs::remove_dir_all(old_sum_path)
             .report()
@@ -1169,7 +1185,7 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to open summary db")?;
 
-        self.summary_db = Some(result);
+        self.summary_db = Arc::new(Some(result));
 
         let result = sled::open(old_sum_path)
             .report()
@@ -1178,18 +1194,22 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to open old summary db")?;
 
-        self.old_summary_db = Some(result);
+        self.old_summary_db = Arc::new(Some(result));
 
         Ok(())
     }
 
     pub async fn new_transaction(&mut self, tr: Transaction) -> Result<(), BlockChainTreeError> {
+        let mut trxs_pool = (&self.trxs_pool).lock().await;
+        let trxs_pool_len = trxs_pool.len();
+        trxs_pool.push_front(Box::new(tr.clone()));
+        drop(trxs_pool);
         // if it is in first bunch of transactions
         // to be added to blockchain.
         // AND if it is not a last block
         // that is pending.
-        if self.trxs_pool.len() < MAX_TRANSACTIONS_PER_BLOCK
-            && self.main_chain.get_height() as usize + 1 % BLOCKS_PER_ITERATION != 0
+        if trxs_pool_len < MAX_TRANSACTIONS_PER_BLOCK
+            && self.main_chain.get_height().await as usize + 1 % BLOCKS_PER_ITERATION != 0
         {
             self.decrease_funds(tr.get_sender(), tr.get_amount())
                 .await
@@ -1204,37 +1224,38 @@ impl BlockChainTree {
                 ))?;
         }
 
-        self.trxs_pool.push_front(Box::new(tr));
         Ok(())
     }
 
-    pub fn pop_last_transactions(&mut self) -> Option<Vec<Box<dyn Transactionable>>> {
-        if self.trxs_pool.is_empty() {
+    pub async fn pop_last_transactions(&mut self) -> Option<Vec<Box<dyn Transactionable>>> {
+        let mut trxs_pool = self.trxs_pool.lock().await;
+        if trxs_pool.is_empty() {
             return None;
         }
 
-        let mut transactions_amount = MAX_TRANSACTIONS_PER_BLOCK;
-        if transactions_amount > self.trxs_pool.len() {
-            transactions_amount = self.trxs_pool.len();
-        }
+        let transactions_amount = if MAX_TRANSACTIONS_PER_BLOCK > trxs_pool.len() {
+            trxs_pool.len()
+        } else {
+            MAX_TRANSACTIONS_PER_BLOCK
+        };
+
         let mut to_return: Vec<Box<dyn Transactionable>> = Vec::with_capacity(transactions_amount);
 
         let mut counter = 0;
 
         while counter < transactions_amount {
-            let result = self.trxs_pool.pop_back();
-            if result.is_none() {
+            if let Some(tr) = trxs_pool.pop_back() {
+                to_return.push(tr);
+            } else {
                 break;
             }
-            let tr = result.unwrap();
 
-            to_return.push(tr);
             counter += 1;
         }
         Some(to_return)
     }
 
-    pub fn get_pool(&mut self) -> &VecDeque<Box<dyn Transactionable>> {
-        &self.trxs_pool
-    }
+    // pub fn get_pool(&mut self) -> &VecDeque<Box<dyn Transactionable>> {
+    //     &self.trxs_pool
+    // }
 }

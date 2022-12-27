@@ -36,7 +36,7 @@ pub trait Transactionable: Debug {
     ) -> Result<(), TransactionError>;
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Transaction {
     sender: [u8; 33],
     receiver: [u8; 33],
