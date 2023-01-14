@@ -17,7 +17,7 @@ use std::io::Write;
 use std::path::Path;
 use std::str;
 use std::sync::Arc;
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 
 use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -56,9 +56,9 @@ static BLOCKS_PER_ITERATION: usize = 12960;
 pub struct Chain {
     db: Db,
     height_reference: Db,
-    height: Arc<Mutex<u64>>,
+    height: Arc<RwLock<u64>>,
     genesis_hash: [u8; 32],
-    difficulty: Arc<Mutex<[u8; 32]>>,
+    difficulty: Arc<RwLock<[u8; 32]>>,
 }
 
 impl Chain {
@@ -115,9 +115,9 @@ impl Chain {
         Ok(Chain {
             db,
             height_reference,
-            height: Arc::new(Mutex::new(height)),
+            height: Arc::new(RwLock::new(height)),
             genesis_hash,
-            difficulty: Arc::new(Mutex::new(difficulty)),
+            difficulty: Arc::new(RwLock::new(difficulty)),
         })
     }
 
@@ -131,11 +131,11 @@ impl Chain {
 
         let hash = tools::hash(&dump);
 
-        let mut height = self.height.lock().await;
+        let mut height = self.height.write().await;
         let height_bytes = height.to_be_bytes();
 
         self.db
-            .insert(&height_bytes, dump)
+            .insert(height_bytes, dump)
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
@@ -164,18 +164,18 @@ impl Chain {
     }
 
     pub async fn get_height(&self) -> u64 {
-        *self.height.lock().await
+        *self.height.read().await
     }
 
     pub async fn get_difficulty(&self) -> [u8; 32] {
-        self.difficulty.lock().await.clone()
+        *self.difficulty.read().await
     }
 
     pub async fn find_by_height(
         &self,
         height: u64,
     ) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
-        let chain_height = self.height.lock().await;
+        let chain_height = self.height.read().await;
         if height > *chain_height {
             return Ok(None);
         }
@@ -247,7 +247,7 @@ impl Chain {
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))?;
 
-        file.write_all(&self.height.lock().await.to_be_bytes())
+        file.write_all(&self.height.read().await.to_be_bytes())
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write height")?;
@@ -257,7 +257,7 @@ impl Chain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write genesis block")?;
 
-        file.write_all(self.difficulty.lock().await.as_ref())
+        file.write_all(self.difficulty.read().await.as_ref())
             .report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failes to write difficulty")?;
@@ -295,14 +295,14 @@ impl Chain {
         Ok(Chain {
             db,
             height_reference,
-            height: Arc::new(Mutex::new(0)),
+            height: Arc::new(RwLock::new(0)),
             genesis_hash: *genesis_hash,
-            difficulty: Arc::new(Mutex::new(BEGINNING_DIFFICULTY)),
+            difficulty: Arc::new(RwLock::new(BEGINNING_DIFFICULTY)),
         })
     }
 
     pub async fn get_last_block(&self) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
-        let height = self.height.lock().await;
+        let height = self.height.read().await;
         let last_block_index = *height - 1;
         drop(height);
 
@@ -396,9 +396,9 @@ impl DerivativeChain {
         Ok(DerivativeChain {
             db,
             height_reference,
-            height: height,
+            height,
             genesis_hash,
-            difficulty: difficulty,
+            difficulty,
             global_height,
         })
     }
@@ -599,7 +599,7 @@ impl DerivativeChain {
 
 #[derive(Clone)]
 pub struct BlockChainTree {
-    trxs_pool: Arc<Mutex<VecDeque<Box<dyn Transactionable>>>>,
+    trxs_pool: Arc<RwLock<VecDeque<Box<dyn Transactionable>>>>,
     summary_db: Arc<Option<Db>>,
     old_summary_db: Arc<Option<Db>>,
     main_chain: Chain,
@@ -684,9 +684,9 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))?;
 
         Ok(BlockChainTree {
-            trxs_pool: Arc::new(Mutex::new(trxs_pool)),
+            trxs_pool: Arc::new(RwLock::new(trxs_pool)),
             summary_db: Arc::new(Some(summary_db)),
-            main_chain: main_chain,
+            main_chain,
             old_summary_db: Arc::new(Some(old_summary_db)),
         })
     }
@@ -730,9 +730,9 @@ impl BlockChainTree {
         // .attach_printable("failed to create root folder for derivatives")?;
 
         Ok(BlockChainTree {
-            trxs_pool: Arc::new(Mutex::new(trxs_pool)),
+            trxs_pool: Arc::new(RwLock::new(trxs_pool)),
             summary_db: Arc::new(Some(summary_db)),
-            main_chain: main_chain,
+            main_chain,
             old_summary_db: Arc::new(Some(old_summary_db)),
         })
     }
@@ -749,7 +749,7 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to open config file")?;
 
-        let trxs_pool = self.trxs_pool.lock().await;
+        let trxs_pool = self.trxs_pool.read().await;
 
         // write transactions amount
         file.write_all(&(trxs_pool.len() as u64).to_be_bytes())
@@ -1200,10 +1200,8 @@ impl BlockChainTree {
     }
 
     pub async fn new_transaction(&mut self, tr: Transaction) -> Result<(), BlockChainTreeError> {
-        let mut trxs_pool = (&self.trxs_pool).lock().await;
-        let trxs_pool_len = trxs_pool.len();
-        trxs_pool.push_front(Box::new(tr.clone()));
-        drop(trxs_pool);
+        let trxs_pool_len = self.trxs_pool.read().await.len();
+        self.trxs_pool.write().await.push_front(Box::new(tr.clone()));
         // if it is in first bunch of transactions
         // to be added to blockchain.
         // AND if it is not a last block
@@ -1228,7 +1226,7 @@ impl BlockChainTree {
     }
 
     pub async fn pop_last_transactions(&mut self) -> Option<Vec<Box<dyn Transactionable>>> {
-        let mut trxs_pool = self.trxs_pool.lock().await;
+        let trxs_pool = self.trxs_pool.read().await;
         if trxs_pool.is_empty() {
             return None;
         }
@@ -1244,7 +1242,7 @@ impl BlockChainTree {
         let mut counter = 0;
 
         while counter < transactions_amount {
-            if let Some(tr) = trxs_pool.pop_back() {
+            if let Some(tr) = self.trxs_pool.write().await.pop_back() {
                 to_return.push(tr);
             } else {
                 break;
