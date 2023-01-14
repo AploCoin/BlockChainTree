@@ -1201,7 +1201,10 @@ impl BlockChainTree {
 
     pub async fn new_transaction(&mut self, tr: Transaction) -> Result<(), BlockChainTreeError> {
         let trxs_pool_len = self.trxs_pool.read().await.len();
-        self.trxs_pool.write().await.push_front(Box::new(tr.clone()));
+        self.trxs_pool
+            .write()
+            .await
+            .push_front(Box::new(tr.clone()));
         // if it is in first bunch of transactions
         // to be added to blockchain.
         // AND if it is not a last block
