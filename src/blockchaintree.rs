@@ -795,7 +795,7 @@ impl BlockChainTree {
     pub async fn get_derivative_chain(
         &mut self,
         addr: &[u8; 33],
-    ) -> Result<Option<&Arc<RwLock<DerivativeChain>>>, BlockChainTreeError> {
+    ) -> Result<Option<Arc<RwLock<DerivativeChain>>>, BlockChainTreeError> {
         let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr: String = addr.encode_hex::<String>();
         path_string += &hex_addr;
@@ -807,10 +807,10 @@ impl BlockChainTree {
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetDerivChain),
                 )?;
             
-            
-            self.deratives.insert(*addr, Arc::new(RwLock::new(result)));
-
-            return Ok(self.deratives.get(addr));
+            return Ok(Some(
+                self.deratives.entry(*addr)
+                    .or_insert_with(|| Arc::new(RwLock::new(result))).clone()
+            ));
         }
 
         Ok(None)
@@ -825,7 +825,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         genesis_hash: &[u8; 32],
         global_height: u64,
-    ) -> Result<&Arc<RwLock<DerivativeChain>>, BlockChainTreeError> {
+    ) -> Result<Arc<RwLock<DerivativeChain>>, BlockChainTreeError> {
         let mut root_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr: String = addr.encode_hex::<String>();
         root_path += &hex_addr;
@@ -864,11 +864,13 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
-
-        self.deratives.insert(*addr, Arc::new(RwLock::new(chain)));
         
 
-        Ok(self.deratives.get(addr).unwrap())
+        return Ok(
+            self.deratives.entry(*addr)
+                .or_insert_with(|| Arc::new(RwLock::new(chain))).clone()
+        );
+        
     }
 
     pub fn check_main_folders() -> Result<(), BlockChainTreeError> {
