@@ -3,7 +3,7 @@ use crate::block::{SumTransactionBlock, SummarizeBlock, TokenBlock, TransactionB
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable};
 use num_bigint::BigUint;
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashMap};
 use std::convert::TryInto;
 
 use crate::dump_headers::Headers;
@@ -18,6 +18,7 @@ use std::path::Path;
 use std::str;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+
 
 use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -603,6 +604,7 @@ pub struct BlockChainTree {
     summary_db: Arc<Option<Db>>,
     old_summary_db: Arc<Option<Db>>,
     main_chain: Chain,
+    deratives: HashMap<[u8; 33], Arc<RwLock<DerivativeChain>>>
 }
 
 impl BlockChainTree {
@@ -688,6 +690,7 @@ impl BlockChainTree {
             summary_db: Arc::new(Some(summary_db)),
             main_chain,
             old_summary_db: Arc::new(Some(old_summary_db)),
+            deratives: HashMap::new(),
         })
     }
 
@@ -734,6 +737,7 @@ impl BlockChainTree {
             summary_db: Arc::new(Some(summary_db)),
             main_chain,
             old_summary_db: Arc::new(Some(old_summary_db)),
+            deratives: HashMap::new(),
         })
     }
 
@@ -788,10 +792,10 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub fn get_derivative_chain(
+    pub async fn get_derivative_chain(
         &mut self,
         addr: &[u8; 33],
-    ) -> Result<Option<Box<DerivativeChain>>, BlockChainTreeError> {
+    ) -> Result<Option<Arc<RwLock<DerivativeChain>>>, BlockChainTreeError> {
         let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr: String = addr.encode_hex::<String>();
         path_string += &hex_addr;
@@ -800,12 +804,13 @@ impl BlockChainTree {
         let path = Path::new(&path_string);
         if path.exists() {
             let result = DerivativeChain::new(&path_string).change_context(
-                BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetDerivChain),
-            )?;
-
-            let chain = Box::new(result);
-
-            return Ok(Some(chain));
+                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetDerivChain),
+                )?;
+            
+            return Ok(Some(
+                self.deratives.entry(*addr)
+                    .or_insert_with(|| Arc::new(RwLock::new(result))).clone()
+            ));
         }
 
         Ok(None)
@@ -815,11 +820,12 @@ impl BlockChainTree {
         &mut self.main_chain
     }
 
-    pub fn create_derivative_chain(
+    pub async fn create_derivative_chain(
+        &mut self,
         addr: &[u8; 33],
         genesis_hash: &[u8; 32],
         global_height: u64,
-    ) -> Result<Box<DerivativeChain>, BlockChainTreeError> {
+    ) -> Result<Arc<RwLock<DerivativeChain>>, BlockChainTreeError> {
         let mut root_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr: String = addr.encode_hex::<String>();
         root_path += &hex_addr;
@@ -852,14 +858,19 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
-
+        
         chain
             .dump_config(&root_path)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
+        
 
-        Ok(Box::new(chain))
+        return Ok(
+            self.deratives.entry(*addr)
+                .or_insert_with(|| Arc::new(RwLock::new(chain))).clone()
+        );
+        
     }
 
     pub fn check_main_folders() -> Result<(), BlockChainTreeError> {
