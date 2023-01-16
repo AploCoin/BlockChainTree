@@ -3,7 +3,7 @@ use crate::block::{SumTransactionBlock, SummarizeBlock, TokenBlock, TransactionB
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable};
 use num_bigint::BigUint;
-use std::collections::{VecDeque, HashMap};
+use std::collections::{HashMap, VecDeque};
 use std::convert::TryInto;
 
 use crate::dump_headers::Headers;
@@ -18,7 +18,6 @@ use std::path::Path;
 use std::str;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-
 
 use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -604,7 +603,7 @@ pub struct BlockChainTree {
     summary_db: Arc<Option<Db>>,
     old_summary_db: Arc<Option<Db>>,
     main_chain: Chain,
-    deratives: HashMap<[u8; 33], Arc<RwLock<DerivativeChain>>>
+    deratives: HashMap<[u8; 33], Arc<RwLock<DerivativeChain>>>,
 }
 
 impl BlockChainTree {
@@ -804,12 +803,14 @@ impl BlockChainTree {
         let path = Path::new(&path_string);
         if path.exists() {
             let result = DerivativeChain::new(&path_string).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetDerivChain),
-                )?;
-            
+                BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetDerivChain),
+            )?;
+
             return Ok(Some(
-                self.deratives.entry(*addr)
-                    .or_insert_with(|| Arc::new(RwLock::new(result))).clone()
+                self.deratives
+                    .entry(*addr)
+                    .or_insert_with(|| Arc::new(RwLock::new(result)))
+                    .clone(),
             ));
         }
 
@@ -858,19 +859,18 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
-        
+
         chain
             .dump_config(&root_path)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
-        
 
-        return Ok(
-            self.deratives.entry(*addr)
-                .or_insert_with(|| Arc::new(RwLock::new(chain))).clone()
-        );
-        
+        return Ok(self
+            .deratives
+            .entry(*addr)
+            .or_insert_with(|| Arc::new(RwLock::new(chain)))
+            .clone());
     }
 
     pub fn check_main_folders() -> Result<(), BlockChainTreeError> {

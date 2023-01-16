@@ -1,6 +1,7 @@
 use blockchaintree::block::{self, BasicInfo};
 use blockchaintree::{self, transaction::Transactionable};
 use num_bigint::ToBigUint;
+use std::sync::Arc;
 
 static SENDER: &[u8; 33] = b"123456789012345678901234567890123";
 static RECIEVER: &[u8; 33] = b"123456789012345678901234567890123";
@@ -29,18 +30,34 @@ async fn chain_test() {
 
     let block = block::TokenBlock::new(default_info, String::new(), tr);
 
-    let mut derivative_chain = if let Some(chain) = blockchain.get_derivative_chain(SENDER).unwrap()
+    let derivative_chain = if let chain = blockchain
+        .get_derivative_chain(SENDER)
+        .await
+        .unwrap()
+        .unwrap()
+        .clone()
     {
         chain
     } else {
-        blockchaintree::blockchaintree::BlockChainTree::create_derivative_chain(
-            SENDER, PREV_HASH, 0,
-        )
-        .unwrap()
+        blockchain
+            .create_derivative_chain(SENDER, PREV_HASH, 0)
+            .await
+            .unwrap()
+            .clone()
     };
 
-    derivative_chain.add_block(&block).await.unwrap();
+    derivative_chain
+        .write()
+        .await
+        .add_block(&block)
+        .await
+        .unwrap();
 
-    let block_db = derivative_chain.find_by_height(0).unwrap().unwrap();
+    let block_db = derivative_chain
+        .read()
+        .await
+        .find_by_height(0)
+        .unwrap()
+        .unwrap();
     assert_eq!(block_db.payment_transaction.get_sender(), SENDER);
 }
