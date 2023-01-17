@@ -29,18 +29,16 @@ async fn chain_test() {
 
     let block = block::TokenBlock::new(default_info, String::new(), tr);
 
-    let derivative_chain = if let Some(chain) = blockchain
-        .get_derivative_chain(SENDER)
-        .await
-        .unwrap()
-    {
-        chain
-    } else {
-        *blockchain
-            .create_derivative_chain(SENDER, PREV_HASH, 0)
-            .await
-            .unwrap()
-    }.clone();
+    let derivative_chain =
+        if let Some(chain) = blockchain.get_derivative_chain(SENDER).await.unwrap() {
+            chain
+        } else {
+            *blockchain
+                .create_derivative_chain(SENDER, PREV_HASH, 0)
+                .await
+                .unwrap()
+        }
+        .clone();
 
     derivative_chain
         .write()

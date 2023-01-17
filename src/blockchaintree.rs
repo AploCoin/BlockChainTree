@@ -866,11 +866,12 @@ impl BlockChainTree {
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
 
-        return Ok(Box::new(self
-            .deratives
-            .entry(*addr)
-            .or_insert_with(|| Arc::new(RwLock::new(chain)))
-            .clone()));
+        return Ok(Box::new(
+            self.deratives
+                .entry(*addr)
+                .or_insert_with(|| Arc::new(RwLock::new(chain)))
+                .clone(),
+        ));
     }
 
     pub fn check_main_folders() -> Result<(), BlockChainTreeError> {
