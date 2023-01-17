@@ -866,6 +866,7 @@ impl BlockChainTree {
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
 
+
         return Ok(Box::new(
             self.deratives
                 .entry(*addr)
