@@ -52,6 +52,8 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
+type TrxsPool = Arc<RwLock<VecDeque<Box<dyn Transactionable>>>>;
+
 #[derive(Clone)]
 pub struct Chain {
     db: Db,
@@ -598,7 +600,7 @@ impl DerivativeChain {
 }
 
 pub struct BlockChainTree {
-    trxs_pool: Arc<RwLock<VecDeque<Box<dyn Transactionable>>>>,
+    trxs_pool: TrxsPool,
     summary_db: Arc<Option<Db>>,
     old_summary_db: Arc<Option<Db>>,
     main_chain: Chain,
