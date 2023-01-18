@@ -33,7 +33,7 @@ async fn chain_test() {
         if let Some(chain) = blockchain.get_derivative_chain(SENDER).await.unwrap() {
             chain
         } else {
-            *blockchain
+            blockchain
                 .create_derivative_chain(SENDER, PREV_HASH, 0)
                 .await
                 .unwrap()
