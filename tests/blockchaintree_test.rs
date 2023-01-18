@@ -29,18 +29,29 @@ async fn chain_test() {
 
     let block = block::TokenBlock::new(default_info, String::new(), tr);
 
-    let mut derivative_chain = if let Some(chain) = blockchain.get_derivative_chain(SENDER).unwrap()
-    {
-        chain
-    } else {
-        blockchaintree::blockchaintree::BlockChainTree::create_derivative_chain(
-            SENDER, PREV_HASH, 0,
-        )
+    let derivative_chain =
+        if let Some(chain) = blockchain.get_derivative_chain(SENDER).await.unwrap() {
+            chain
+        } else {
+            blockchain
+                .create_derivative_chain(SENDER, PREV_HASH, 0)
+                .await
+                .unwrap()
+        }
+        .clone();
+
+    derivative_chain
+        .write()
+        .await
+        .add_block(&block)
+        .await
+        .unwrap();
+
+    let block_db = derivative_chain
+        .read()
+        .await
+        .find_by_height(0)
         .unwrap()
-    };
-
-    derivative_chain.add_block(&block).await.unwrap();
-
-    let block_db = derivative_chain.find_by_height(0).unwrap().unwrap();
+        .unwrap();
     assert_eq!(block_db.payment_transaction.get_sender(), SENDER);
 }
