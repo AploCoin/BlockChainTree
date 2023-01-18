@@ -597,13 +597,12 @@ impl DerivativeChain {
     }
 }
 
-#[derive(Clone)]
 pub struct BlockChainTree {
     trxs_pool: Arc<RwLock<VecDeque<Box<dyn Transactionable>>>>,
     summary_db: Arc<Option<Db>>,
     old_summary_db: Arc<Option<Db>>,
     main_chain: Chain,
-    deratives: HashMap<[u8; 33], Arc<RwLock<DerivativeChain>>>,
+    deratives: RwLock<HashMap<[u8; 33], Arc<RwLock<DerivativeChain>>>>,
 }
 
 impl BlockChainTree {
@@ -689,7 +688,7 @@ impl BlockChainTree {
             summary_db: Arc::new(Some(summary_db)),
             main_chain,
             old_summary_db: Arc::new(Some(old_summary_db)),
-            deratives: HashMap::new(),
+            deratives: RwLock::new(HashMap::new()),
         })
     }
 
@@ -736,7 +735,7 @@ impl BlockChainTree {
             summary_db: Arc::new(Some(summary_db)),
             main_chain,
             old_summary_db: Arc::new(Some(old_summary_db)),
-            deratives: HashMap::new(),
+            deratives: RwLock::new(HashMap::new()),
         })
     }
 
@@ -808,6 +807,8 @@ impl BlockChainTree {
 
             return Ok(Some(
                 self.deratives
+                    .write()
+                    .await
                     .entry(*addr)
                     .or_insert_with(|| Arc::new(RwLock::new(result)))
                     .clone(),
@@ -826,7 +827,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         genesis_hash: &[u8; 32],
         global_height: u64,
-    ) -> Result<Box<Arc<RwLock<DerivativeChain>>>, BlockChainTreeError> {
+    ) -> Result<Arc<RwLock<DerivativeChain>>, BlockChainTreeError> {
         let mut root_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);
         let hex_addr: String = addr.encode_hex::<String>();
         root_path += &hex_addr;
@@ -866,13 +867,13 @@ impl BlockChainTree {
                 BCTreeErrorKind::CreateDerivChain,
             ))?;
 
-
-        return Ok(Box::new(
-            self.deratives
-                .entry(*addr)
-                .or_insert_with(|| Arc::new(RwLock::new(chain)))
-                .clone(),
-        ));
+        return Ok(self
+            .deratives
+            .write()
+            .await
+            .entry(*addr)
+            .or_insert_with(|| Arc::new(RwLock::new(chain)))
+            .clone());
     }
 
     pub fn check_main_folders() -> Result<(), BlockChainTreeError> {
