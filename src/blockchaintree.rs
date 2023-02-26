@@ -52,7 +52,7 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
-type TrxsPool = Arc<RwLock<VecDeque<Box<dyn Transactionable + Send>>>>;
+type TrxsPool = Arc<RwLock<VecDeque<Box<dyn Transactionable + Send + Sync>>>>;
 
 #[derive(Clone)]
 pub struct Chain {
@@ -647,7 +647,7 @@ impl BlockChainTree {
 
         // allocate VecDeque
         let mut trxs_pool =
-            VecDeque::<Box<dyn Transactionable + Send>>::with_capacity(trxs_amount as usize);
+            VecDeque::<Box<dyn Transactionable + Send + Sync>>::with_capacity(trxs_amount as usize);
 
         // parsing transactions
         for _ in 0..trxs_amount {
@@ -716,7 +716,7 @@ impl BlockChainTree {
             .attach_printable("failed to open old summary db")?;
 
         // allocate VecDeque
-        let trxs_pool = VecDeque::<Box<dyn Transactionable + Send>>::new();
+        let trxs_pool = VecDeque::<Box<dyn Transactionable + Send + Sync>>::new();
 
         // opening main chain
         let main_chain = Chain::new_without_config(MAIN_CHAIN_DIRECTORY, &GENESIS_BLOCK)
@@ -1245,7 +1245,9 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn pop_last_transactions(&mut self) -> Option<Vec<Box<dyn Transactionable>>> {
+    pub async fn pop_last_transactions(
+        &mut self,
+    ) -> Option<Vec<Box<dyn Transactionable + Send + Sync>>> {
         let trxs_pool = self.trxs_pool.read().await;
         if trxs_pool.is_empty() {
             return None;
@@ -1257,7 +1259,8 @@ impl BlockChainTree {
             MAX_TRANSACTIONS_PER_BLOCK
         };
 
-        let mut to_return: Vec<Box<dyn Transactionable>> = Vec::with_capacity(transactions_amount);
+        let mut to_return: Vec<Box<dyn Transactionable + Send + Sync>> =
+            Vec::with_capacity(transactions_amount);
 
         let mut counter = 0;
 
