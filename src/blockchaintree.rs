@@ -52,7 +52,7 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
-type TrxsPool = Arc<RwLock<VecDeque<Box<dyn Transactionable>>>>;
+type TrxsPool = Arc<RwLock<VecDeque<Box<dyn Transactionable + Send>>>>;
 
 #[derive(Clone)]
 pub struct Chain {
@@ -647,7 +647,7 @@ impl BlockChainTree {
 
         // allocate VecDeque
         let mut trxs_pool =
-            VecDeque::<Box<dyn Transactionable>>::with_capacity(trxs_amount as usize);
+            VecDeque::<Box<dyn Transactionable + Send>>::with_capacity(trxs_amount as usize);
 
         // parsing transactions
         for _ in 0..trxs_amount {
@@ -716,7 +716,7 @@ impl BlockChainTree {
             .attach_printable("failed to open old summary db")?;
 
         // allocate VecDeque
-        let trxs_pool = VecDeque::<Box<dyn Transactionable>>::new();
+        let trxs_pool = VecDeque::<Box<dyn Transactionable + Send>>::new();
 
         // opening main chain
         let main_chain = Chain::new_without_config(MAIN_CHAIN_DIRECTORY, &GENESIS_BLOCK)
@@ -1221,6 +1221,7 @@ impl BlockChainTree {
             .write()
             .await
             .push_front(Box::new(tr.clone()));
+
         // if it is in first bunch of transactions
         // to be added to blockchain.
         // AND if it is not a last block
