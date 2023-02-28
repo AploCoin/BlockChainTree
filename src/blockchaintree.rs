@@ -821,8 +821,8 @@ impl BlockChainTree {
         Ok(None)
     }
 
-    pub fn get_main_chain(self) -> Arc<Chain> {
-        self.main_chain
+    pub fn get_main_chain(&self) -> Arc<Chain> {
+        self.main_chain.clone()
     }
 
     pub async fn create_derivative_chain(
