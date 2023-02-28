@@ -599,6 +599,7 @@ impl DerivativeChain {
     }
 }
 
+#[derive(Clone)]
 pub struct BlockChainTree {
     trxs_pool: TrxsPool,
     summary_db: Arc<Option<Db>>,
