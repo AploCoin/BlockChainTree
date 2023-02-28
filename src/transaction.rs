@@ -132,7 +132,7 @@ impl Transactionable for Transaction {
 
         // load sender
         let sender = PublicKey::from_slice(&self.sender)
-            .report()
+            .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // creating verifier
@@ -140,12 +140,12 @@ impl Transactionable for Transaction {
 
         // load message
         let message = Message::from_slice(Box::leak(signed_data_hash))
-            .report()
+            .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // load signature
         let signature = Signature::from_compact(&self.signature)
-            .report()
+            .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // verifying hashed data with public key

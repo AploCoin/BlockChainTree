@@ -62,21 +62,21 @@ pub fn hash(data: &[u8]) -> [u8; 32] {
 pub fn compress_to_file(output_file: String, data: &[u8]) -> Result<(), ToolsError> {
     let path = Path::new(&output_file);
     let target = File::create(path)
-        .report()
+        .into_report()
         .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     let mut encoder = zstd::Encoder::new(target, 1)
-        .report()
+        .into_report()
         .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     encoder
         .write_all(data)
-        .report()
+        .into_report()
         .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     encoder
         .finish()
-        .report()
+        .into_report()
         .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     Ok(())
@@ -87,18 +87,18 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
     let mut decoded_data: Vec<u8> = Vec::new();
 
     let file = File::open(path)
-        .report()
+        .into_report()
         .attach_printable("Error opening file")
         .change_context(ToolsError::Zstd(ZstdErrorKind::DecompressingFile))?;
 
     let mut decoder = zstd::Decoder::new(file)
-        .report()
+        .into_report()
         .attach_printable("Error creating decoder")
         .change_context(ToolsError::Zstd(ZstdErrorKind::DecompressingFile))?;
 
     decoder
         .read_to_end(&mut decoded_data)
-        .report()
+        .into_report()
         .attach_printable("Error reading file")
         .change_context(ToolsError::Zstd(ZstdErrorKind::DecompressingFile))?;
 

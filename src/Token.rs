@@ -1,4 +1,4 @@
-use crate::{Tools};
+use crate::Tools;
 use num_bigint::BigUint;
 use num_traits::identities::Zero;
 use secp256k1::ecdsa::Signature;
@@ -89,25 +89,25 @@ impl Token {
 
     pub fn decode_current_owner(&self) -> Result<Vec<u8>, TokenError> {
         return base64::decode(&self.current_owner)
-            .report()
+            .into_report()
             .attach_printable("Error decoding token current owner")
             .change_context(TokenError::DecodeError);
     }
     pub fn decode_signature(&self) -> Result<Vec<u8>, TokenError> {
         return base64::decode(&self.signature)
-            .report()
+            .into_report()
             .attach_printable("Error decoding token signature")
             .change_context(TokenError::DecodeError);
     }
     pub fn decode_token_data(&self) -> Result<Vec<u8>, TokenError> {
         return base64::decode(&self.token_data)
-            .report()
+            .into_report()
             .attach_printable("Error decoding token data")
             .change_context(TokenError::DecodeError);
     }
     pub fn decode_smol_contract(&self) -> Result<Vec<u8>, TokenError> {
         return base64::decode(&self.smol_contract)
-            .report()
+            .into_report()
             .attach_printable("Error decoding token smol contract")
             .change_context(TokenError::DecodeError);
     }
@@ -235,19 +235,19 @@ impl Token {
 
         // loading message
         let message = Message::from_slice(&signed_data)
-            .report()
+            .into_report()
             .attach_printable("Error verifying token: couldn't load message")
             .change_context(TokenError::VerifyError)?;
 
         // loading public key
         let public_key = PublicKey::from_slice(&self.current_owner)
-            .report()
+            .into_report()
             .attach_printable("Error verifying token: couldn't load public key")
             .change_context(TokenError::VerifyError)?;
 
         // load signature
         let signature = Signature::from_compact(&self.signature)
-            .report()
+            .into_report()
             .attach_printable("Error verifying token: couldn't load signature")
             .change_context(TokenError::VerifyError)?;
 
@@ -475,19 +475,19 @@ impl TokenAction {
 
     pub fn decode_current_owner(&self) -> Result<Vec<u8>, TokenError> {
         return base64::decode(&self.current_owner)
-            .report()
+            .into_report()
             .attach_printable("Error decoding token action: couldn't decode current owner")
             .change_context(TokenError::DecodeError);
     }
     pub fn decode_previous_owner(&self) -> Result<Vec<u8>, TokenError> {
         return base64::decode(&self.previous_owner)
-            .report()
+            .into_report()
             .attach_printable("Error decoding token action: couldn't decode previous owner")
             .change_context(TokenError::DecodeError);
     }
     pub fn decode_signature(&self) -> Result<Vec<u8>, TokenError> {
         return base64::decode(&self.signature)
-            .report()
+            .into_report()
             .attach_printable("Error decoding token action: couldn't decode signature")
             .change_context(TokenError::DecodeError);
     }
