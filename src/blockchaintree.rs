@@ -1216,7 +1216,7 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn new_transaction(&mut self, tr: Transaction) -> Result<(), BlockChainTreeError> {
+    pub async fn new_transaction(&self, tr: Transaction) -> Result<(), BlockChainTreeError> {
         let trxs_pool_len = self.trxs_pool.read().await.len();
         self.trxs_pool
             .write()
