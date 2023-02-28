@@ -1,4 +1,4 @@
-use blockchaintree::block::{self, BasicInfo};
+use blockchaintree::block::{self, BasicInfo, SumTransactionBlock, TransactionBlock};
 use blockchaintree::{self, transaction::Transactionable};
 use num_bigint::ToBigUint;
 
@@ -27,7 +27,7 @@ async fn chain_test() {
         2222222288u64.to_biguint().unwrap(),
     );
 
-    let block = block::TokenBlock::new(default_info, String::new(), tr);
+    let block = block::TokenBlock::new(default_info.clone(), String::new(), tr.clone());
 
     let derivative_chain =
         if let Some(chain) = blockchain.get_derivative_chain(SENDER).await.unwrap() {
@@ -54,4 +54,16 @@ async fn chain_test() {
         .unwrap()
         .unwrap();
     assert_eq!(block_db.payment_transaction.get_sender(), SENDER);
+
+    let chain = blockchain.get_main_chain();
+    let block = SumTransactionBlock::new(
+        Some(TransactionBlock::new(
+            vec![Box::new(tr)],
+            50.to_biguint().unwrap(),
+            default_info,
+            [0u8; 32],
+        )),
+        None,
+    );
+    chain.add_block(&block).await.unwrap();
 }
