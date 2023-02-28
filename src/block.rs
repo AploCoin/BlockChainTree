@@ -582,10 +582,10 @@ impl SumTransactionBlock {
     }
 
     pub fn is_transaction_block(&self) -> bool {
-        !self.transaction_block.is_none()
+        !self.transaction_block.is_some()
     }
     pub fn is_summarize_block(&self) -> bool {
-        !self.summarize_block.is_none()
+        self.summarize_block.is_some()
     }
     pub fn hash(&self) -> Result<[u8; 32], BlockError> {
         if self.is_transaction_block() {
