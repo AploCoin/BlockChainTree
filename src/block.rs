@@ -582,7 +582,7 @@ impl SumTransactionBlock {
     }
 
     pub fn is_transaction_block(&self) -> bool {
-        !self.transaction_block.is_some()
+        self.transaction_block.is_some()
     }
     pub fn is_summarize_block(&self) -> bool {
         self.summarize_block.is_some()
