@@ -23,7 +23,7 @@ macro_rules! bytes_to_u64 {
 
 static ALREADY_SET: &str = "data is already set";
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BasicInfo {
     timestamp: u64,
     pow: BigUint,
@@ -582,10 +582,10 @@ impl SumTransactionBlock {
     }
 
     pub fn is_transaction_block(&self) -> bool {
-        self.transaction_block.is_none()
+        !self.transaction_block.is_none()
     }
     pub fn is_summarize_block(&self) -> bool {
-        self.summarize_block.is_none()
+        !self.summarize_block.is_none()
     }
     pub fn hash(&self) -> Result<[u8; 32], BlockError> {
         if self.is_transaction_block() {
