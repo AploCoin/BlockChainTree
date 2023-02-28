@@ -54,6 +54,9 @@ static BLOCKS_PER_ITERATION: usize = 12960;
 
 type TrxsPool = Arc<RwLock<VecDeque<Box<dyn Transactionable + Send + Sync>>>>;
 
+type DerivativesCell = Arc<RwLock<DerivativeChain>>;
+type Derivatives = Arc<RwLock<HashMap<[u8; 33], DerivativesCell>>>;
+
 #[derive(Clone)]
 pub struct Chain {
     db: Db,
@@ -123,10 +126,7 @@ impl Chain {
         })
     }
 
-    pub async fn add_block(
-        &mut self,
-        block: &SumTransactionBlock,
-    ) -> Result<(), BlockChainTreeError> {
+    pub async fn add_block(&self, block: &SumTransactionBlock) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
@@ -603,8 +603,8 @@ pub struct BlockChainTree {
     trxs_pool: TrxsPool,
     summary_db: Arc<Option<Db>>,
     old_summary_db: Arc<Option<Db>>,
-    main_chain: Chain,
-    deratives: RwLock<HashMap<[u8; 33], Arc<RwLock<DerivativeChain>>>>,
+    main_chain: Arc<Chain>,
+    deratives: Derivatives,
 }
 
 impl BlockChainTree {
@@ -688,9 +688,9 @@ impl BlockChainTree {
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
             summary_db: Arc::new(Some(summary_db)),
-            main_chain,
+            main_chain: Arc::new(main_chain),
             old_summary_db: Arc::new(Some(old_summary_db)),
-            deratives: RwLock::new(HashMap::new()),
+            deratives: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -735,9 +735,9 @@ impl BlockChainTree {
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
             summary_db: Arc::new(Some(summary_db)),
-            main_chain,
+            main_chain: Arc::new(main_chain),
             old_summary_db: Arc::new(Some(old_summary_db)),
-            deratives: RwLock::new(HashMap::new()),
+            deratives: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -820,8 +820,8 @@ impl BlockChainTree {
         Ok(None)
     }
 
-    pub fn get_main_chain(&mut self) -> &mut Chain {
-        &mut self.main_chain
+    pub fn get_main_chain(&mut self) -> Arc<Chain> {
+        self.main_chain.clone()
     }
 
     pub async fn create_derivative_chain(
