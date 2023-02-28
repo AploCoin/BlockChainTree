@@ -794,7 +794,7 @@ impl BlockChainTree {
     }
 
     pub async fn get_derivative_chain(
-        &mut self,
+        &self,
         addr: &[u8; 33],
     ) -> Result<Option<Arc<RwLock<DerivativeChain>>>, BlockChainTreeError> {
         let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
@@ -821,12 +821,12 @@ impl BlockChainTree {
         Ok(None)
     }
 
-    pub fn get_main_chain(&mut self) -> Arc<Chain> {
-        self.main_chain.clone()
+    pub fn get_main_chain(self) -> Arc<Chain> {
+        self.main_chain
     }
 
     pub async fn create_derivative_chain(
-        &mut self,
+        &self,
         addr: &[u8; 33],
         genesis_hash: &[u8; 32],
         global_height: u64,
@@ -970,7 +970,7 @@ impl BlockChainTree {
     // summary data bases functions
 
     pub async fn add_funds(
-        &mut self,
+        &self,
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
@@ -1058,7 +1058,7 @@ impl BlockChainTree {
     }
 
     pub async fn decrease_funds(
-        &mut self,
+        &self,
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
@@ -1147,7 +1147,7 @@ impl BlockChainTree {
         }
     }
 
-    pub fn get_old_funds(&mut self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
+    pub fn get_old_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
         match Option::as_ref(&self.old_summary_db)
             .as_ref()
             .unwrap()
