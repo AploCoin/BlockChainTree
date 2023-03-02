@@ -84,7 +84,7 @@ impl MerkleTree {
         }
     }
 
-    pub fn add_objects(&mut self, mut input: Vec<&[u8; 32]>) -> bool {
+    pub fn add_objects(&mut self, mut input: Vec<[u8; 32]>) -> bool {
         if !self.array_representation.is_empty() {
             return false;
         }
@@ -95,7 +95,7 @@ impl MerkleTree {
         self.depth = find_closest_power_of_2(initial_length);
         if initial_length % 2 != 0 {
             for _ in initial_length..usize::pow(2, self.depth as u32) {
-                input.push(&PADDING_HASH);
+                input.push(PADDING_HASH);
             }
             self.depth = find_closest_power_of_2(input.len());
         }
@@ -109,7 +109,7 @@ impl MerkleTree {
         }
 
         for inp in input.iter() {
-            self.array_representation.push(Some(**inp));
+            self.array_representation.push(Some(*inp));
         }
         self.populate_tree(self.array_representation.len(), true);
 

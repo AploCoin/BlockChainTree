@@ -140,10 +140,12 @@ sub_errors![
     ChainErrorKind {
         Init: "failed to create a new chain",
         AddingBlock: "failed to add block",
+        AddingTransaction: "failed to add transaction",
         FindByHeight: "failed to find block by height",
         FindByHashE: "failed to find by hash",
         DumpConfig: "failed to dump config",
-        InitWithoutConfig: "failed to create a new chain without config"
+        InitWithoutConfig: "failed to create a new chain without config",
+        FindTransaction: "failed to find transaction"
     },
     DerivChainErrorKind {
         Init: "failed to create a new derivative chain",

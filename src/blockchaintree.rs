@@ -35,6 +35,7 @@ static CHAINS_FOLDER: &str = "CHAINS/";
 
 static BLOCKS_FOLDER: &str = "BLOCKS/";
 static REFERENCES_FOLDER: &str = "REF/";
+static TRANSACTIONS_FOLDER: &str = "TRANSACTIONS/";
 
 static CONFIG_FILE: &str = "Chain.config";
 static LOOKUP_TABLE_FILE: &str = "LookUpTable.dat";
@@ -61,6 +62,7 @@ type Derivatives = Arc<RwLock<HashMap<[u8; 33], DerivativesCell>>>;
 pub struct Chain {
     db: Db,
     height_reference: Db,
+    transactions: Db,
     height: Arc<RwLock<u64>>,
     genesis_hash: [u8; 32],
     difficulty: Arc<RwLock<[u8; 32]>>,
@@ -71,10 +73,12 @@ impl Chain {
         let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
+        let path_transactions_st = root.clone() + TRANSACTIONS_FOLDER;
         let path_height_st = root + CONFIG_FILE;
 
         let path_blocks = Path::new(&path_blocks_st);
         let path_reference = Path::new(&path_references_st);
+        let path_transactions = Path::new(&path_transactions_st);
         let path_height = Path::new(&path_height_st);
 
         // open blocks DB
@@ -88,6 +92,12 @@ impl Chain {
             .into_report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
             .attach_printable("failed to open references db")?;
+
+        // open transactions DB
+        let transactions_db = sled::open(path_transactions)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
+            .attach_printable("failed to open transactions db")?;
 
         let mut file = File::open(path_height)
             .into_report()
@@ -120,6 +130,7 @@ impl Chain {
         Ok(Chain {
             db,
             height_reference,
+            transactions: transactions_db,
             height: Arc::new(RwLock::new(height)),
             genesis_hash,
             difficulty: Arc::new(RwLock::new(difficulty)),
@@ -163,6 +174,71 @@ impl Chain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
         Ok(())
+    }
+
+    /// dumps only transactions as of now, fix later
+    pub async fn add_transaction(
+        &self,
+        transaction: impl Transactionable,
+    ) -> Result<(), BlockChainTreeError> {
+        self.transactions
+            .insert(
+                transaction.hash(),
+                transaction
+                    .dump()
+                    .map_err(|e| {
+                        e.change_context(BlockChainTreeError::Chain(
+                            ChainErrorKind::AddingTransaction,
+                        ))
+                    })
+                    .attach_printable("failed to dump transaction")?,
+            )
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))
+            .attach_printable("failed to add transaction to database")?;
+
+        self.transactions
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))?;
+
+        Ok(())
+    }
+
+    pub async fn find_transaction(
+        &self,
+        hash: &[u8; 32],
+    ) -> Result<Option<Transaction>, BlockChainTreeError> {
+        let dump = if let Some(dump) = self
+            .transactions
+            .get(hash)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindTransaction))
+            .attach_printable("Error getting transaction from database")?
+            .take()
+        {
+            dump
+        } else {
+            return Ok(None);
+        };
+
+        let transaction = if dump[0] == Headers::Transaction as u8 {
+            Transaction::parse(&dump[1..], (dump.len() - 1) as u64)
+                .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindTransaction))
+                .attach_printable("Error parsing transaction")
+        } else {
+            Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FindTransaction))
+                    .attach_printable("Unknown header"),
+            )
+        }?;
+
+        Ok(Some(transaction))
     }
 
     pub async fn get_height(&self) -> u64 {
@@ -273,10 +349,12 @@ impl Chain {
     ) -> Result<Chain, BlockChainTreeError> {
         let root = String::from(root_path);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
-        let path_references_st = root + REFERENCES_FOLDER;
+        let path_references_st = root.clone() + REFERENCES_FOLDER;
+        let path_transactions_st = root + TRANSACTIONS_FOLDER;
 
         let path_blocks = Path::new(&path_blocks_st);
         let path_reference = Path::new(&path_references_st);
+        let path_transactions = Path::new(&path_transactions_st);
 
         // open blocks DB
         let db = sled::open(path_blocks)
@@ -294,9 +372,16 @@ impl Chain {
             ))
             .attach_printable("failed to open references db")?;
 
+        // open transactions DB
+        let transactions_db = sled::open(path_transactions)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
+            .attach_printable("failed to open transactions db")?;
+
         Ok(Chain {
             db,
             height_reference,
+            transactions: transactions_db,
             height: Arc::new(RwLock::new(0)),
             genesis_hash: *genesis_hash,
             difficulty: Arc::new(RwLock::new(BEGINNING_DIFFICULTY)),
@@ -940,6 +1025,17 @@ impl BlockChainTree {
                     BCTreeErrorKind::CheckMainFolders,
                 ))
                 .attach_printable("failed to create references paths")?;
+        }
+
+        let transactions_path = String::from(MAIN_CHAIN_DIRECTORY) + TRANSACTIONS_FOLDER;
+        let transactions_path = Path::new(&transactions_path);
+        if !transactions_path.exists() {
+            fs::create_dir(references_path)
+                .into_report()
+                .change_context(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::CheckMainFolders,
+                ))
+                .attach_printable("failed to create transactions paths")?;
         }
 
         let derivatives_path = String::from(DERIVATIVE_CHAINS_DIRECTORY);

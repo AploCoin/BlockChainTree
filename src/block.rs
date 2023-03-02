@@ -138,7 +138,7 @@ impl BasicInfo {
 
 #[derive(Debug)]
 pub struct TransactionBlock {
-    transactions: Vec<Box<dyn Transactionable>>,
+    transactions: Vec<[u8; 32]>,
     fee: BigUint,
     merkle_tree: Option<MerkleTree>,
     merkle_tree_root: [u8; 32],
@@ -147,7 +147,7 @@ pub struct TransactionBlock {
 
 impl TransactionBlock {
     pub fn new(
-        transactions: Vec<Box<dyn Transactionable>>,
+        transactions: Vec<[u8; 32]>,
         fee: BigUint,
         default_info: BasicInfo,
         merkle_tree_root: [u8; 32],
@@ -167,14 +167,8 @@ impl TransactionBlock {
 
     pub fn build_merkle_tree(&mut self) -> Result<(), BlockError> {
         let mut new_merkle_tree = MerkleTree::new();
-        let mut hashes: Vec<&[u8; 32]> = Vec::with_capacity(self.transactions.len());
 
-        for tx in self.transactions.iter() {
-            let res = tx.hash(&self.default_info.previous_hash);
-            hashes.push(Box::leak(Box::new(res)));
-        }
-
-        let res = new_merkle_tree.add_objects(hashes);
+        let res = new_merkle_tree.add_objects(self.transactions.clone());
         if !res {
             return Err(Report::new(BlockError::TransactionBlock(
                 TxBlockErrorKind::BuildingMerkleTree,
@@ -208,17 +202,18 @@ impl TransactionBlock {
 
     pub fn get_dump_size(&self) -> usize {
         let mut size: usize = 1;
-        for transaction in self.transactions.iter() {
-            size += transaction.get_dump_size();
-        }
         size += tools::bigint_size(&self.fee);
         size += 32;
         size += self.default_info.get_dump_size();
+        size += self.transactions.len() * 32;
 
         size
     }
 
-    pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
+    pub fn dump_with_transactions(
+        &self,
+        transactions: &[impl Transactionable],
+    ) -> Result<Vec<u8>, BlockError> {
         let size: usize = self.get_dump_size();
 
         let mut to_return: Vec<u8> = Vec::with_capacity(size);
@@ -251,7 +246,7 @@ impl TransactionBlock {
         to_return.extend(amount_of_transactions.to_be_bytes().iter());
 
         // transactions/tokens
-        for transaction in self.transactions.iter() {
+        for transaction in transactions.iter() {
             // size of transaction
             let size_of_transaction: u32 = transaction.get_dump_size() as u32;
             to_return.extend(size_of_transaction.to_be_bytes().iter());
@@ -264,7 +259,76 @@ impl TransactionBlock {
         Ok(to_return)
     }
 
+    pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
+        let size: usize = self.get_dump_size();
+
+        let mut to_return: Vec<u8> = Vec::with_capacity(size);
+
+        //header
+        to_return.push(Headers::TransactionBlock as u8);
+
+        // merkle tree root
+        to_return.extend(self.merkle_tree_root.iter());
+
+        // default info
+        self.default_info
+            .dump(&mut to_return)
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))?;
+
+        // fee
+        tools::dump_biguint(&self.fee, &mut to_return)
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))?;
+
+        // transactions hashes
+        for hash in &self.transactions {
+            to_return.extend(hash);
+        }
+
+        Ok(to_return)
+    }
+
     pub fn parse(data: &[u8], block_size: u32) -> Result<TransactionBlock, BlockError> {
+        let mut offset: usize = 0;
+
+        // merkle tree root
+        let merkle_tree_root: [u8; 32] = data[..32].try_into().unwrap();
+        offset += 32; // inc offset
+
+        // default info
+        let default_info = BasicInfo::parse(&data[offset..])
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))?;
+
+        offset += default_info.get_dump_size(); // inc offset
+
+        // fee
+        let (fee, _offset) = tools::load_biguint(&data[offset..])
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))?;
+
+        offset += _offset; // inc offset
+
+        if (data.len() - offset) % 32 != 0 {
+            return Err(BlockError::TransactionBlock(TxBlockErrorKind::Parse).into());
+        }
+
+        // parse transaction hashes
+        let transactions: Vec<[u8; 32]> = data[offset..]
+            .chunks_exact(32)
+            .map(|hash| unsafe { hash.try_into().unwrap_unchecked() })
+            .collect();
+
+        Ok(TransactionBlock {
+            transactions,
+            fee,
+            merkle_tree: None,
+            merkle_tree_root,
+            default_info,
+        })
+    }
+
+    pub fn parse_with_transactions(
+        data: &[u8],
+        block_size: u32,
+    ) -> Result<(TransactionBlock, Vec<Box<dyn Transactionable>>), BlockError> {
         let mut offset: usize = 0;
 
         // merkle tree root
@@ -331,11 +395,11 @@ impl TransactionBlock {
             )));
         }
 
-        Ok(TransactionBlock::new(
+        let transactions_hashes: Vec<[u8; 32]> = transactions.iter().map(|tr| tr.hash()).collect();
+
+        Ok((
+            TransactionBlock::new(transactions_hashes, fee, default_info, merkle_tree_root),
             transactions,
-            fee,
-            default_info,
-            merkle_tree_root,
         ))
     }
 

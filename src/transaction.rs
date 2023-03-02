@@ -12,11 +12,11 @@ use secp256k1::{Message, Secp256k1, SecretKey};
 
 use error_stack::{IntoReport, Report, Result, ResultExt};
 
-pub trait Transactionable: Debug {
-    fn hash(&self, prev_hash: &[u8; 32]) -> [u8; 32];
-    fn hash_without_signature(&self, prev_hash: &[u8; 32]) -> Box<[u8; 32]>;
+pub trait Transactionable: Debug + Send {
+    fn hash(&self) -> [u8; 32];
+    fn hash_without_signature(&self) -> [u8; 32];
 
-    fn verify(&self, prev_hash: &[u8; 32]) -> Result<bool, TransactionError>;
+    fn verify(&self) -> Result<bool, TransactionError>;
 
     fn dump(&self) -> Result<Vec<u8>, TransactionError>;
     fn get_dump_size(&self) -> usize;
@@ -29,15 +29,11 @@ pub trait Transactionable: Debug {
     fn get_receiver(&self) -> &[u8; 33];
     fn get_timestamp(&self) -> u64;
     fn get_signature(&self) -> &[u8; 64];
-    fn sign(
-        &mut self,
-        prev_hash: &[u8; 32],
-        private_key: &[u8; 32],
-    ) -> Result<(), TransactionError>;
 }
 
 #[derive(Debug, Clone)]
 pub struct Transaction {
+    hash: [u8; 32],
     sender: [u8; 33],
     receiver: [u8; 33],
     timestamp: u64,
@@ -46,48 +42,68 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn new(
+    pub fn generate_signature(
+        sender: &[u8; 33],
+        receiver: &[u8; 33],
+        timestamp: u64,
+        amount: &BigUint,
+        private_key: &[u8; 32],
+    ) -> [u8; 64] {
+        let mut hasher = Sha256::new();
+
+        let amount_as_bytes = amount.to_bytes_be();
+        let calculated_size: usize = 33 + 33 + 8 + amount_as_bytes.len();
+
+        let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
+        for byte in sender.iter() {
+            concatenated_input.push(*byte);
+        }
+        for byte in receiver.iter() {
+            concatenated_input.push(*byte);
+        }
+        for byte in timestamp.to_be_bytes().iter() {
+            concatenated_input.push(*byte);
+        }
+        for byte in amount_as_bytes.iter() {
+            concatenated_input.push(*byte);
+        }
+
+        hasher.update(concatenated_input);
+        let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
+        let message = unsafe { Message::from_slice(&result).unwrap_unchecked() };
+
+        let secret_key = unsafe { SecretKey::from_slice(private_key).unwrap_unchecked() };
+
+        let signer = Secp256k1::new();
+
+        let signature = signer.sign_ecdsa(&message, &secret_key);
+
+        signature.serialize_compact()
+    }
+
+    pub fn generate_hash(
         sender: &[u8; 33],
         receiver: &[u8; 33],
         timestamp: u64,
         signature: &[u8; 64],
-        amount: BigUint,
-    ) -> Transaction {
-        Transaction {
-            sender: *sender,
-            receiver: *receiver,
-            timestamp,
-            signature: *signature,
-            amount,
-        }
-    }
-
-    pub fn get_amount(&self) -> &BigUint {
-        &self.amount
-    }
-}
-
-impl Transactionable for Transaction {
-    fn hash(&self, prev_hash: &[u8; 32]) -> [u8; 32] {
+        amount: &BigUint,
+    ) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
-        let amount_as_bytes = self.amount.to_bytes_be();
-        let calculated_size: usize = 32 + 33 + 33 + 8 + amount_as_bytes.len();
+        let amount_as_bytes = amount.to_bytes_be();
+        let calculated_size: usize = 33 + 33 + 8 + amount_as_bytes.len();
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
-        for byte in prev_hash.iter() {
+        for byte in sender.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in self.sender.iter() {
+        for byte in receiver.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in self.receiver.iter() {
+        for byte in signature.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in self.signature.iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in self.timestamp.to_be_bytes().iter() {
+        for byte in timestamp.to_be_bytes().iter() {
             concatenated_input.push(*byte);
         }
         for byte in amount_as_bytes.iter() {
@@ -98,16 +114,59 @@ impl Transactionable for Transaction {
         hasher.finalize().as_slice().try_into().unwrap()
     }
 
-    fn hash_without_signature(&self, prev_hash: &[u8; 32]) -> Box<[u8; 32]> {
+    pub fn new(
+        sender: [u8; 33],
+        receiver: [u8; 33],
+        timestamp: u64,
+        amount: BigUint,
+        private_key: [u8; 32],
+    ) -> Transaction {
+        let signature =
+            Transaction::generate_signature(&sender, &receiver, timestamp, &amount, &private_key);
+        Transaction {
+            hash: Transaction::generate_hash(&sender, &receiver, timestamp, &signature, &amount),
+            sender,
+            receiver,
+            timestamp,
+            signature,
+            amount,
+        }
+    }
+
+    pub fn new_signed(
+        hash: [u8; 32],
+        sender: [u8; 33],
+        receiver: [u8; 33],
+        timestamp: u64,
+        amount: BigUint,
+        signature: [u8; 64],
+    ) -> Transaction {
+        Transaction {
+            hash,
+            sender,
+            receiver,
+            timestamp,
+            signature,
+            amount,
+        }
+    }
+
+    pub fn get_amount(&self) -> &BigUint {
+        &self.amount
+    }
+}
+
+impl Transactionable for Transaction {
+    fn hash(&self) -> [u8; 32] {
+        self.hash
+    }
+    fn hash_without_signature(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
         let amount_as_bytes = self.amount.to_bytes_be();
-        let calculated_size: usize = 32 + 33 + 33 + 8 + amount_as_bytes.len();
+        let calculated_size: usize = 33 + 33 + 8 + amount_as_bytes.len();
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
-        for byte in prev_hash.iter() {
-            concatenated_input.push(*byte);
-        }
         for byte in self.sender.iter() {
             concatenated_input.push(*byte);
         }
@@ -124,11 +183,11 @@ impl Transactionable for Transaction {
         hasher.update(concatenated_input);
         let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
 
-        Box::new(result)
+        result
     }
 
-    fn verify(&self, prev_hash: &[u8; 32]) -> Result<bool, TransactionError> {
-        let signed_data_hash: Box<[u8; 32]> = self.hash_without_signature(prev_hash);
+    fn verify(&self) -> Result<bool, TransactionError> {
+        let signed_data_hash = self.hash_without_signature();
 
         // load sender
         let sender = PublicKey::from_slice(&self.sender)
@@ -139,7 +198,7 @@ impl Transactionable for Transaction {
         let verifier = Secp256k1::verification_only();
 
         // load message
-        let message = Message::from_slice(Box::leak(signed_data_hash))
+        let message = Message::from_slice(&signed_data_hash)
             .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
@@ -167,6 +226,11 @@ impl Transactionable for Transaction {
         // header
         transaction_dump.push(Headers::Transaction as u8);
 
+        // hash
+        for byte in self.hash.iter() {
+            transaction_dump.push(*byte);
+        }
+
         // sender
         for byte in self.sender.iter() {
             transaction_dump.push(*byte);
@@ -193,16 +257,20 @@ impl Transactionable for Transaction {
     }
 
     fn get_dump_size(&self) -> usize {
-        1 + 33 + 33 + 8 + 64 + tools::bigint_size(&self.amount)
+        1 + 32 + 33 + 33 + 8 + 64 + tools::bigint_size(&self.amount)
     }
 
     fn parse(data: &[u8], size: u64) -> Result<Transaction, TransactionError> {
         let mut index: usize = 0;
 
-        if data.len() <= 138 {
+        if data.len() <= 170 {
             return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
-                .attach_printable("Data length <= 138"));
+                .attach_printable("Data length <= 170"));
         }
+
+        // parsing hash
+        let hash: [u8; 32] = unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
+        index += 32;
 
         // parsing sender address
         let sender: [u8; 33] = unsafe { data[index..index + 33].try_into().unwrap_unchecked() };
@@ -231,8 +299,8 @@ impl Transactionable for Transaction {
                 .attach_printable("Index != Tx size"));
         }
 
-        Ok(Transaction::new(
-            &sender, &receiver, timestamp, &signature, amount,
+        Ok(Transaction::new_signed(
+            hash, sender, receiver, timestamp, amount, signature,
         ))
     }
 
@@ -250,47 +318,5 @@ impl Transactionable for Transaction {
 
     fn get_signature(&self) -> &[u8; 64] {
         &self.signature
-    }
-
-    fn sign(
-        &mut self,
-        prev_hash: &[u8; 32],
-        private_key: &[u8; 32],
-    ) -> Result<(), TransactionError> {
-        let mut hasher = Sha256::new();
-
-        let amount_as_bytes = self.amount.to_bytes_be();
-        let calculated_size: usize = 32 + 33 + 33 + 8 + amount_as_bytes.len();
-
-        let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
-        for byte in prev_hash.iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in self.sender.iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in self.receiver.iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in self.timestamp.to_be_bytes().iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in amount_as_bytes.iter() {
-            concatenated_input.push(*byte);
-        }
-
-        hasher.update(concatenated_input);
-        let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
-        let message = unsafe { Message::from_slice(&result).unwrap_unchecked() };
-
-        let secret_key = unsafe { SecretKey::from_slice(private_key).unwrap_unchecked() };
-
-        let signer = Secp256k1::new();
-
-        let signature = signer.sign_ecdsa(&message, &secret_key);
-
-        self.signature = signature.serialize_compact();
-
-        Ok(())
     }
 }
