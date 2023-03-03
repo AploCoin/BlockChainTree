@@ -241,6 +241,16 @@ impl Chain {
         Ok(Some(transaction))
     }
 
+    pub async fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
+        Ok(self
+            .transactions
+            .get(hash)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindTransaction))
+            .attach_printable("Error getting transaction from database")?
+            .is_some())
+    }
+
     pub async fn get_height(&self) -> u64 {
         *self.height.read().await
     }
@@ -1313,6 +1323,19 @@ impl BlockChainTree {
     }
 
     pub async fn new_transaction(&self, tr: Transaction) -> Result<(), BlockChainTreeError> {
+        if self
+            .get_main_chain()
+            .transaction_exists(&tr.hash())
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?
+        {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Transaction with same hash found"));
+        }
         let trxs_pool_len = self.trxs_pool.read().await.len();
         self.trxs_pool
             .write()
@@ -1323,7 +1346,7 @@ impl BlockChainTree {
         // to be added to blockchain.
         // AND if it is not a last block
         // that is pending.
-        if trxs_pool_len < MAX_TRANSACTIONS_PER_BLOCK
+        if trxs_pool_len + 1 < MAX_TRANSACTIONS_PER_BLOCK
             && self.main_chain.get_height().await as usize + 1 % BLOCKS_PER_ITERATION != 0
         {
             self.decrease_funds(tr.get_sender(), tr.get_amount())
