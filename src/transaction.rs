@@ -13,7 +13,7 @@ use secp256k1::{Message, Secp256k1, SecretKey};
 
 use error_stack::{IntoReport, Report, Result, ResultExt};
 
-pub type TransactionableItem = Box<dyn Transactionable>;
+pub type TransactionableItem = Box<dyn Transactionable + Send + Sync>;
 
 impl Eq for TransactionableItem {}
 
@@ -35,7 +35,7 @@ impl PartialEq for TransactionableItem {
     }
 }
 
-pub trait Transactionable {
+pub trait Transactionable: Send + Sync {
     fn hash(&self) -> [u8; 32];
     fn hash_without_signature(&self) -> [u8; 32];
 
