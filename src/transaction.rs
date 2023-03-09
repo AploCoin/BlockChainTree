@@ -25,13 +25,7 @@ impl Ord for TransactionableItem {
 
 impl PartialOrd for TransactionableItem {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(if self.get_timestamp() < other.get_timestamp() {
-            Ordering::Less
-        } else if self.get_timestamp() == other.get_timestamp() {
-            Ordering::Equal
-        } else {
-            Ordering::Greater
-        })
+        Some(self.get_timestamp().cmp(&other.get_timestamp()))
     }
 }
 
