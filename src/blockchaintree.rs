@@ -3,7 +3,7 @@ use crate::block::{SumTransactionBlock, SummarizeBlock, TokenBlock, TransactionB
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
-use std::collections::{BinaryHeap, HashMap, HashSet, VecDeque};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryInto;
 
 use crate::dump_headers::Headers;
