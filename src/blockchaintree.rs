@@ -1326,7 +1326,7 @@ impl BlockChainTree {
 
     /// Check whether transaction with same hash exists
     ///
-    ///
+    /// first check in trxs_hashes then in main chain references
     pub async fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
         if self.trxs_hashes.read().await.get(hash).is_some() {
             return Ok(true);
