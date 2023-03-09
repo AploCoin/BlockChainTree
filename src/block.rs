@@ -410,6 +410,20 @@ impl TransactionBlock {
     }
 }
 
+impl MainChainBlock for TransactionBlock {
+    fn hash(&self) -> Result<[u8; 32], BlockError> {
+        self.hash()
+    }
+
+    fn get_dump_size(&self) -> usize {
+        self.get_dump_size()
+    }
+
+    fn dump(&self) -> Result<Vec<u8>, BlockError> {
+        self.dump()
+    }
+}
+
 pub struct TokenBlock {
     pub default_info: BasicInfo,
     pub token_signature: String,
@@ -625,53 +639,73 @@ impl SummarizeBlock {
     }
 }
 
-pub struct SumTransactionBlock {
-    transaction_block: Option<TransactionBlock>,
-    summarize_block: Option<SummarizeBlock>,
+impl MainChainBlock for SummarizeBlock {
+    fn hash(&self) -> Result<[u8; 32], BlockError> {
+        self.hash()
+    }
+
+    fn get_dump_size(&self) -> usize {
+        self.get_dump_size()
+    }
+
+    fn dump(&self) -> Result<Vec<u8>, BlockError> {
+        self.dump()
+    }
 }
 
-impl SumTransactionBlock {
-    pub fn new(
-        transaction_block: Option<TransactionBlock>,
-        summarize_block: Option<SummarizeBlock>,
-    ) -> SumTransactionBlock {
-        SumTransactionBlock {
-            transaction_block,
-            summarize_block,
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.summarize_block.is_none() && self.transaction_block.is_none()
-    }
-
-    pub fn is_transaction_block(&self) -> bool {
-        self.transaction_block.is_some()
-    }
-    pub fn is_summarize_block(&self) -> bool {
-        self.summarize_block.is_some()
-    }
-    pub fn hash(&self) -> Result<[u8; 32], BlockError> {
-        if self.is_transaction_block() {
-            self.transaction_block.as_ref().unwrap().hash()
-        } else {
-            self.summarize_block.as_ref().unwrap().hash()
-        }
-    }
-
-    pub fn get_dump_size(&self) -> usize {
-        if self.is_transaction_block() {
-            return self.transaction_block.as_ref().unwrap().get_dump_size();
-        } else {
-            return self.summarize_block.as_ref().unwrap().get_dump_size();
-        }
-    }
-
-    pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
-        if self.is_transaction_block() {
-            return self.transaction_block.as_ref().unwrap().dump();
-        } else {
-            return self.summarize_block.as_ref().unwrap().dump();
-        }
-    }
+pub trait MainChainBlock {
+    fn hash(&self) -> Result<[u8; 32], BlockError>;
+    fn get_dump_size(&self) -> usize;
+    fn dump(&self) -> Result<Vec<u8>, BlockError>;
 }
+
+// pub struct SumTransactionBlock {
+//     transaction_block: Option<TransactionBlock>,
+//     summarize_block: Option<SummarizeBlock>,
+// }
+
+// impl SumTransactionBlock {
+//     pub fn new(
+//         transaction_block: Option<TransactionBlock>,
+//         summarize_block: Option<SummarizeBlock>,
+//     ) -> SumTransactionBlock {
+//         SumTransactionBlock {
+//             transaction_block,
+//             summarize_block,
+//         }
+//     }
+
+//     pub fn is_empty(&self) -> bool {
+//         self.summarize_block.is_none() && self.transaction_block.is_none()
+//     }
+
+//     pub fn is_transaction_block(&self) -> bool {
+//         self.transaction_block.is_some()
+//     }
+//     pub fn is_summarize_block(&self) -> bool {
+//         self.summarize_block.is_some()
+//     }
+//     pub fn hash(&self) -> Result<[u8; 32], BlockError> {
+//         if self.is_transaction_block() {
+//             self.transaction_block.as_ref().unwrap().hash()
+//         } else {
+//             self.summarize_block.as_ref().unwrap().hash()
+//         }
+//     }
+
+//     pub fn get_dump_size(&self) -> usize {
+//         if self.is_transaction_block() {
+//             return self.transaction_block.as_ref().unwrap().get_dump_size();
+//         } else {
+//             return self.summarize_block.as_ref().unwrap().get_dump_size();
+//         }
+//     }
+
+//     pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
+//         if self.is_transaction_block() {
+//             return self.transaction_block.as_ref().unwrap().dump();
+//         } else {
+//             return self.summarize_block.as_ref().unwrap().dump();
+//         }
+//     }
+// }

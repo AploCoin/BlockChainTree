@@ -1,4 +1,4 @@
-use blockchaintree::block::{self, BasicInfo, SumTransactionBlock, TransactionBlock};
+use blockchaintree::block::{self, BasicInfo, TransactionBlock};
 use blockchaintree::{self, transaction::Transactionable};
 use num_bigint::ToBigUint;
 
@@ -56,14 +56,11 @@ async fn chain_test() {
     assert_eq!(block_db.payment_transaction.get_sender(), SENDER);
 
     let chain = blockchain.get_main_chain();
-    let block = SumTransactionBlock::new(
-        Some(TransactionBlock::new(
-            vec![tr.hash()],
-            50.to_biguint().unwrap(),
-            default_info,
-            [0u8; 32],
-        )),
-        None,
+    let block = TransactionBlock::new(
+        vec![tr.hash()],
+        50.to_biguint().unwrap(),
+        default_info,
+        [0u8; 32],
     );
     chain.add_block(&block).await.unwrap();
 
