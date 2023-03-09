@@ -1,9 +1,9 @@
 #![allow(non_snake_case)]
 use crate::block::{SumTransactionBlock, SummarizeBlock, TokenBlock, TransactionBlock};
 use crate::tools;
-use crate::transaction::{Transaction, Transactionable};
+use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
-use std::collections::{HashMap, VecDeque};
+use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryInto;
 
 use crate::dump_headers::Headers;
@@ -53,7 +53,7 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
-type TrxsPool = Arc<RwLock<VecDeque<Box<dyn Transactionable + Send + Sync>>>>;
+type TrxsPool = Arc<RwLock<BinaryHeap<TransactionableItem>>>;
 
 type DerivativesCell = Arc<RwLock<DerivativeChain>>;
 type Derivatives = Arc<RwLock<HashMap<[u8; 33], DerivativesCell>>>;
@@ -697,6 +697,7 @@ impl DerivativeChain {
 #[derive(Clone)]
 pub struct BlockChainTree {
     trxs_pool: TrxsPool,
+    trxs_hashes: Arc<RwLock<HashSet<[u8; 32]>>>,
     summary_db: Arc<Option<Db>>,
     old_summary_db: Arc<Option<Db>>,
     main_chain: Arc<Chain>,
@@ -742,8 +743,7 @@ impl BlockChainTree {
         let mut buf: [u8; 4] = [0; 4];
 
         // allocate VecDeque
-        let mut trxs_pool =
-            VecDeque::<Box<dyn Transactionable + Send + Sync>>::with_capacity(trxs_amount as usize);
+        let mut trxs_pool = BinaryHeap::<TransactionableItem>::with_capacity(trxs_amount as usize);
 
         // parsing transactions
         for _ in 0..trxs_amount {
@@ -768,7 +768,7 @@ impl BlockChainTree {
                             BCTreeErrorKind::Init,
                         ))?;
 
-                trxs_pool.push_back(Box::new(transaction));
+                trxs_pool.push(Box::new(transaction));
             } else {
                 return Err(Report::new(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::Init,
@@ -786,7 +786,8 @@ impl BlockChainTree {
             summary_db: Arc::new(Some(summary_db)),
             main_chain: Arc::new(main_chain),
             old_summary_db: Arc::new(Some(old_summary_db)),
-            deratives: Arc::new(RwLock::new(HashMap::new())),
+            deratives: Arc::default(),
+            trxs_hashes: Arc::default(),
         })
     }
 
@@ -812,7 +813,7 @@ impl BlockChainTree {
             .attach_printable("failed to open old summary db")?;
 
         // allocate VecDeque
-        let trxs_pool = VecDeque::<Box<dyn Transactionable + Send + Sync>>::new();
+        let trxs_pool = BinaryHeap::<TransactionableItem>::new();
 
         // opening main chain
         let main_chain = Chain::new_without_config(MAIN_CHAIN_DIRECTORY, &GENESIS_BLOCK)
@@ -833,7 +834,8 @@ impl BlockChainTree {
             summary_db: Arc::new(Some(summary_db)),
             main_chain: Arc::new(main_chain),
             old_summary_db: Arc::new(Some(old_summary_db)),
-            deratives: Arc::new(RwLock::new(HashMap::new())),
+            deratives: Arc::default(),
+            trxs_hashes: Arc::default(),
         })
     }
 
@@ -1322,31 +1324,53 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn new_transaction(&self, tr: Transaction) -> Result<(), BlockChainTreeError> {
+    /// Check whether transaction with same hash exists
+    ///
+    /// first check in trxs_hashes then in main chain references
+    pub async fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
+        if self.trxs_hashes.read().await.get(hash).is_some() {
+            return Ok(true);
+        }
+
         if self
             .get_main_chain()
-            .transaction_exists(&tr.hash())
+            .transaction_exists(hash)
             .await
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))?
         {
+            return Ok(true);
+        }
+
+        Ok(false)
+    }
+
+    /// Add new transaction
+    ///
+    /// Adds new transaction to the transaction pool
+    ///
+    /// If trxs_pool.len() < MAX_TRANSACTIONS_PER_BLOCK and it's not the last block of epoch transaction will be immediately processed
+    ///
+    /// If transaction with same hash exists will return error
+    pub async fn new_transaction(&self, tr: Transaction) -> Result<(), BlockChainTreeError> {
+        if self.transaction_exists(&tr.hash()).await? {
             return Err(Report::new(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))
             .attach_printable("Transaction with same hash found"));
         }
-        let trxs_pool_len = self.trxs_pool.read().await.len();
-        self.trxs_pool
-            .write()
-            .await
-            .push_front(Box::new(tr.clone()));
+
+        let trxs_pool_len = self.trxs_pool.read().await.len() + 1;
+        self.trxs_pool.write().await.push(Box::new(tr.clone()));
+
+        self.trxs_hashes.write().await.insert(tr.hash());
 
         // if it is in first bunch of transactions
         // to be added to blockchain.
         // AND if it is not a last block
         // that is pending.
-        if trxs_pool_len + 1 < MAX_TRANSACTIONS_PER_BLOCK
+        if trxs_pool_len < MAX_TRANSACTIONS_PER_BLOCK
             && self.main_chain.get_height().await as usize + 1 % BLOCKS_PER_ITERATION != 0
         {
             self.decrease_funds(tr.get_sender(), tr.get_amount())
@@ -1365,9 +1389,7 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn pop_last_transactions(
-        &mut self,
-    ) -> Option<Vec<Box<dyn Transactionable + Send + Sync>>> {
+    pub async fn pop_last_transactions(&mut self) -> Option<Vec<TransactionableItem>> {
         let trxs_pool = self.trxs_pool.read().await;
         if trxs_pool.is_empty() {
             return None;
@@ -1379,13 +1401,12 @@ impl BlockChainTree {
             MAX_TRANSACTIONS_PER_BLOCK
         };
 
-        let mut to_return: Vec<Box<dyn Transactionable + Send + Sync>> =
-            Vec::with_capacity(transactions_amount);
+        let mut to_return: Vec<TransactionableItem> = Vec::with_capacity(transactions_amount);
 
         let mut counter = 0;
 
         while counter < transactions_amount {
-            if let Some(tr) = self.trxs_pool.write().await.pop_back() {
+            if let Some(tr) = self.trxs_pool.write().await.pop() {
                 to_return.push(tr);
             } else {
                 break;
