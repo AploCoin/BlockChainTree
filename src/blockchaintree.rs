@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::block::{SumTransactionBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::block::{MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
@@ -137,7 +137,7 @@ impl Chain {
         })
     }
 
-    pub async fn add_block(&self, block: &SumTransactionBlock) -> Result<(), BlockChainTreeError> {
+    pub async fn add_block(&self, block: &impl MainChainBlock) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
@@ -259,10 +259,57 @@ impl Chain {
         *self.difficulty.read().await
     }
 
+    pub async fn find_raw_by_height(
+        &self,
+        height: u64,
+    ) -> Result<Option<Vec<u8>>, BlockChainTreeError> {
+        let chain_height = self.height.read().await;
+        if height > *chain_height {
+            return Ok(None);
+        }
+        drop(chain_height);
+        let mut dump = self
+            .db
+            .get(height.to_be_bytes())
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
+
+        if let Some(dump) = dump.take() {
+            return Ok(Some(dump.to_vec()));
+        }
+        Ok(None)
+    }
+
+    pub async fn find_raw_by_hash(
+        &self,
+        hash: &[u8; 32],
+    ) -> Result<Option<Vec<u8>>, BlockChainTreeError> {
+        let height = match self
+            .height_reference
+            .get(hash)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?
+        {
+            None => {
+                return Ok(None);
+            }
+            Some(h) => {
+                u64::from_be_bytes(h.iter().copied().collect::<Vec<u8>>().try_into().unwrap())
+            }
+        };
+
+        let block = self
+            .find_raw_by_height(height)
+            .await
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
+
+        Ok(block)
+    }
+
     pub async fn find_by_height(
         &self,
         height: u64,
-    ) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
+    ) -> Result<Option<Box<dyn MainChainBlock>>, BlockChainTreeError> {
         let chain_height = self.height.read().await;
         if height > *chain_height {
             return Ok(None);
@@ -281,18 +328,15 @@ impl Chain {
         let dump = dump.unwrap();
 
         if dump[0] == Headers::TransactionBlock as u8 {
-            let result = TransactionBlock::parse(&dump[1..], (dump.len() - 1) as u32)
+            let block = TransactionBlock::parse(&dump[1..], (dump.len() - 1) as u32)
                 .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
-            let block = SumTransactionBlock::new(Some(result), None);
-
-            return Ok(Some(block));
+            return Ok(Some(Box::new(block)));
         } else if dump[0] == Headers::SummarizeBlock as u8 {
-            let result = SummarizeBlock::parse(&dump[1..])
+            let block = SummarizeBlock::parse(&dump[1..])
                 .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
-            let block = SumTransactionBlock::new(None, Some(result));
-            return Ok(Some(block));
+            return Ok(Some(Box::new(block)));
         }
 
         Err(
@@ -304,7 +348,7 @@ impl Chain {
     pub async fn find_by_hash(
         &self,
         hash: &[u8; 32],
-    ) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
+    ) -> Result<Option<Box<dyn MainChainBlock>>, BlockChainTreeError> {
         let height = match self
             .height_reference
             .get(hash)
@@ -398,7 +442,9 @@ impl Chain {
         })
     }
 
-    pub async fn get_last_block(&self) -> Result<Option<SumTransactionBlock>, BlockChainTreeError> {
+    pub async fn get_last_block(
+        &self,
+    ) -> Result<Option<Box<dyn MainChainBlock>>, BlockChainTreeError> {
         let height = self.height.read().await;
         let last_block_index = *height - 1;
         drop(height);
