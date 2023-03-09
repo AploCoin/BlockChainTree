@@ -2,6 +2,7 @@ use crate::errors::*;
 use crate::tools;
 use num_bigint::BigUint;
 use sha2::{Digest, Sha256};
+use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fmt::Debug;
 
@@ -12,7 +13,35 @@ use secp256k1::{Message, Secp256k1, SecretKey};
 
 use error_stack::{IntoReport, Report, Result, ResultExt};
 
-pub trait Transactionable: Debug + Send {
+pub type TransactionableItem = Box<dyn Transactionable>;
+
+impl Eq for TransactionableItem {}
+
+impl Ord for TransactionableItem {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.get_timestamp().cmp(&other.get_timestamp())
+    }
+}
+
+impl PartialOrd for TransactionableItem {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(if self.get_timestamp() < other.get_timestamp() {
+            Ordering::Less
+        } else if self.get_timestamp() == other.get_timestamp() {
+            Ordering::Equal
+        } else {
+            Ordering::Greater
+        })
+    }
+}
+
+impl PartialEq for TransactionableItem {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_timestamp() == other.get_timestamp()
+    }
+}
+
+pub trait Transactionable {
     fn hash(&self) -> [u8; 32];
     fn hash_without_signature(&self) -> [u8; 32];
 
