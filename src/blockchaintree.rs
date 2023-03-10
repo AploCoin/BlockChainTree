@@ -141,6 +141,8 @@ impl Chain {
     /// Adds new block to the chain db
     ///
     /// Adds block and sets heigh reference for it
+    ///
+    /// Doesn't check for blocks validity
     pub async fn add_block(&self, block: &impl MainChainBlock) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
@@ -183,6 +185,8 @@ impl Chain {
     /// Add new transaction to the chain
     ///
     /// Adds transaction into db of transactions, transaction should be also registered in the block
+    ///
+    /// Doesn't validate transaction
     pub async fn add_transaction(
         &self,
         transaction: impl Transactionable,
