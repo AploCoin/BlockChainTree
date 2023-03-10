@@ -206,7 +206,7 @@ pub fn verify_proof(hash: &[u8; 32], root: &[u8; 32], proof: Vec<&[u8; 32]>) -> 
         *i = hash[n] & proof[0][n];
     }
     hasher.update(calculated_root);
-    calculated_root = hasher.finalize().as_slice().try_into().unwrap();
+    calculated_root = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
 
     for idx in proof.iter().skip(1) {
         let mut hasher = Sha256::new();
@@ -215,7 +215,7 @@ pub fn verify_proof(hash: &[u8; 32], root: &[u8; 32], proof: Vec<&[u8; 32]>) -> 
             *item &= idx[n]
         }
         hasher.update(calculated_root);
-        calculated_root = hasher.finalize().as_slice().try_into().unwrap();
+        calculated_root = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
     }
 
     for i in 0..32 {
