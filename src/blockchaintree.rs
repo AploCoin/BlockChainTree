@@ -485,6 +485,28 @@ impl Chain {
 
         self.find_by_height(last_block_index).await
     }
+
+    /// Get hash of the last block in chain
+    ///
+    /// Gets hash from the last record in height reference db
+    pub async fn get_last_hash(&self) -> Result<Option<[u8; 32]>, BlockChainTreeError> {
+        Ok(self
+            .height_reference
+            .last()
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?
+            .map(|(hash, height)| {
+                let mut hash_arr = [0u8; 32];
+                hash.into_iter()
+                    .zip(hash_arr.iter_mut())
+                    .for_each(|(val, cell)| *cell = *val);
+                hash_arr
+            }))
+    }
+
+    pub async fn check_pow_validity(&self, pow: BigUint) -> Result<bool, BlockChainTreeError> {
+        todo!()
+    }
 }
 
 pub struct DerivativeChain {
