@@ -510,7 +510,7 @@ impl Chain {
             }))
     }
 
-    /// Checks if the supply pow is correct
+    /// Checks if the supplied pow is correct
     ///
     /// Takes hash of the last block for current time and checks against it
     ///
