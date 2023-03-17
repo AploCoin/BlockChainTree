@@ -497,7 +497,7 @@ impl Chain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?
             .map(|(hash, height)| {
                 let mut hash_arr = [0u8; 32];
-                hash.into_iter()
+                hash.iter()
                     .zip(hash_arr.iter_mut())
                     .for_each(|(val, cell)| *cell = *val);
                 hash_arr
