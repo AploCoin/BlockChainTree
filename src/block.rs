@@ -28,7 +28,7 @@ pub struct BasicInfo {
     timestamp: u64,
     pow: BigUint,
     previous_hash: [u8; 32],
-    current_hash: [u8; 32],
+    //current_hash: [u8; 32],
     height: u64,
     difficulty: [u8; 32],
 }
@@ -39,7 +39,7 @@ impl BasicInfo {
         timestamp: u64,
         pow: BigUint,
         previous_hash: [u8; 32],
-        current_hash: [u8; 32],
+        //current_hash: [u8; 32],
         height: u64,
         difficulty: [u8; 32],
     ) -> BasicInfo {
@@ -48,7 +48,7 @@ impl BasicInfo {
             timestamp,
             pow,
             previous_hash,
-            current_hash,
+            //current_hash,
             height,
             difficulty,
         }
@@ -68,10 +68,10 @@ impl BasicInfo {
             buffer.push(*byte);
         }
 
-        // dumping current hash
-        for byte in self.current_hash.iter() {
-            buffer.push(*byte);
-        }
+        // // dumping current hash
+        // for byte in self.current_hash.iter() {
+        //     buffer.push(*byte);
+        // }
 
         // dumping height
         for byte in self.height.to_be_bytes().iter() {
@@ -107,10 +107,10 @@ impl BasicInfo {
             unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
 
-        // parsing current hash
-        let current_hash: [u8; 32] =
-            unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
-        index += 32;
+        // // parsing current hash
+        // let current_hash: [u8; 32] =
+        //     unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
+        // index += 32;
 
         // parsing height
         let height: u64 = bytes_to_u64!(data, index);
@@ -129,7 +129,7 @@ impl BasicInfo {
             timestamp,
             pow,
             previous_hash,
-            current_hash,
+            //current_hash,
             height,
             difficulty,
         })
@@ -404,7 +404,7 @@ impl TransactionBlock {
     }
 
     pub fn hash(&self) -> Result<[u8; 32], BlockError> {
-        let dump: Vec<u8> = self.dump().unwrap();
+        let dump: Vec<u8> = self.dump()?;
 
         Ok(tools::hash(&dump))
     }

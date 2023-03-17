@@ -15,7 +15,7 @@ async fn chain_test() {
         500,
         1000u64.to_biguint().unwrap(),
         [0u8; 32],
-        [1u8; 32],
+        //[1u8; 32],
         0,
         [5u8; 32],
     );
