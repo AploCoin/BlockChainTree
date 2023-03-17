@@ -138,12 +138,15 @@ impl Chain {
         })
     }
 
-    /// Adds new block to the chain db
+    /// Adds new block to the chain db, raw API function
     ///
     /// Adds block and sets heigh reference for it
     ///
-    /// Doesn't check for blocks validity
-    pub async fn add_block(&self, block: &impl MainChainBlock) -> Result<(), BlockChainTreeError> {
+    /// Doesn't check for blocks validity, just adds it directly to database
+    pub async fn add_block_raw(
+        &self,
+        block: &impl MainChainBlock,
+    ) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
@@ -182,12 +185,12 @@ impl Chain {
         Ok(())
     }
 
-    /// Add new transaction to the chain
+    /// Add new transaction to the chain, raw API function
     ///
     /// Adds transaction into db of transactions, transaction should be also registered in the block
     ///
     /// Doesn't validate transaction
-    pub async fn add_transaction(
+    pub async fn add_transaction_raw(
         &self,
         transaction: impl Transactionable,
     ) -> Result<(), BlockChainTreeError> {
@@ -490,6 +493,9 @@ impl Chain {
     ///
     /// Gets hash from the last record in height reference db
     pub async fn get_last_hash(&self) -> Result<Option<[u8; 32]>, BlockChainTreeError> {
+        if self.get_height().await == 0 {
+            return Ok(Some(GENESIS_BLOCK));
+        }
         Ok(self
             .height_reference
             .last()
@@ -505,7 +511,15 @@ impl Chain {
     }
 
     pub async fn check_pow_validity(&self, pow: BigUint) -> Result<bool, BlockChainTreeError> {
-        todo!()
+        let last_hash = match self.get_last_hash().await? {
+            Some(hash) => hash,
+            None => {
+                return Err(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE)).into_report()
+            }
+        };
+
+        let difficulty = self.get_difficulty().await;
+        Ok(tools::check_pow(last_hash, difficulty, pow))
     }
 }
 

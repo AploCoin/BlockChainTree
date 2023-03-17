@@ -62,9 +62,9 @@ async fn chain_test() {
         default_info,
         [0u8; 32],
     );
-    chain.add_block(&block).await.unwrap();
+    chain.add_block_raw(&block).await.unwrap();
 
-    chain.add_transaction(tr.clone()).await.unwrap();
+    chain.add_transaction_raw(tr.clone()).await.unwrap();
 
     let loaded_transaction = chain.find_transaction(&tr.hash()).await.unwrap().unwrap();
     assert_eq!(loaded_transaction.get_sender(), SENDER);
