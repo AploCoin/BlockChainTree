@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
 use crate::block::{MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::merkletree::MerkleTree;
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
@@ -8,6 +9,7 @@ use std::convert::TryInto;
 
 use crate::dump_headers::Headers;
 use hex::ToHex;
+use lazy_static::lazy_static;
 use num_traits::Zero;
 use sled::Db;
 use std::fs;
@@ -49,6 +51,12 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 ];
 // God is dead, noone will stop anarchy
+
+lazy_static! {
+    // one coin is 100_000_000 smol coins
+    static ref INITIAL_FEE: BigUint = BigUint::from(16666666usize); // 100_000_000//4
+    static ref FEE_STEP: BigUint = BigUint::from(392156usize); // 100_000_000//255
+}
 
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
@@ -168,7 +176,7 @@ impl Chain {
 
         *height += 1;
 
-        drop(height);
+        //drop(height);
 
         self.db
             .flush_async()
@@ -492,9 +500,9 @@ impl Chain {
     /// Get hash of the last block in chain
     ///
     /// Gets hash from the last record in height reference db
-    pub async fn get_last_hash(&self) -> Result<Option<[u8; 32]>, BlockChainTreeError> {
+    pub async fn get_last_hash(&self) -> Result<[u8; 32], BlockChainTreeError> {
         if self.get_height().await == 0 {
-            return Ok(Some(GENESIS_BLOCK));
+            return Ok(GENESIS_BLOCK);
         }
         Ok(self
             .height_reference
@@ -507,7 +515,8 @@ impl Chain {
                     .zip(hash_arr.iter_mut())
                     .for_each(|(val, cell)| *cell = *val);
                 hash_arr
-            }))
+            })
+            .unwrap_or(GENESIS_BLOCK))
     }
 
     /// Checks if the supplied pow is correct
@@ -522,15 +531,14 @@ impl Chain {
     ///
     /// P.S. it was made into separate function only because of mudularity and to provide raw API(later)
     async fn check_pow_validity(&self, pow: BigUint) -> Result<bool, BlockChainTreeError> {
-        let last_hash = match self.get_last_hash().await? {
-            Some(hash) => hash,
-            None => {
-                return Err(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE)).into_report()
-            }
-        };
+        let last_hash = self.get_last_hash().await?;
 
         let difficulty = self.get_difficulty().await;
         Ok(tools::check_pow(last_hash, difficulty, pow))
+    }
+
+    pub async fn calculate_fee(&self) -> BigUint {
+        todo!()
     }
 }
 
@@ -1560,34 +1568,92 @@ impl BlockChainTree {
     }
 
     /// Pop <= MAX_TRANSACTIONS_PER_BLOCK transactions from the pool
-    pub async fn pop_last_transactions(&mut self) -> Option<Vec<TransactionableItem>> {
-        let trxs_pool = self.trxs_pool.read().await;
-        if trxs_pool.is_empty() {
-            return None;
+    // pub async fn pop_last_transactions(&mut self) -> Option<Vec<TransactionableItem>> {
+    //     let trxs_pool = self.trxs_pool.read().await;
+    //     if trxs_pool.is_empty() {
+    //         return None;
+    //     }
+
+    //     let transactions_amount = if MAX_TRANSACTIONS_PER_BLOCK > trxs_pool.len() {
+    //         trxs_pool.len()
+    //     } else {
+    //         MAX_TRANSACTIONS_PER_BLOCK
+    //     };
+
+    //     let mut to_return: Vec<TransactionableItem> = Vec::with_capacity(transactions_amount);
+
+    //     let mut counter = 0;
+
+    //     while counter < transactions_amount {
+    //         if let Some(tr) = self.trxs_pool.write().await.pop() {
+    //             to_return.push(tr);
+    //         } else {
+    //             break;
+    //         }
+
+    //         counter += 1;
+    //     }
+    //     Some(to_return)
+    // }
+
+    async fn emit_transaction_block(
+        &self,
+        pow: BigUint,
+        addr: [u8; 33],
+    ) -> Result<TransactionBlock, BlockChainTreeError> {
+        let mut trxs_pool = self.trxs_pool.write().await;
+
+        let last_hash = self.main_chain.get_last_hash().await.change_context(
+            BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
+        )?;
+
+        if !tools::check_pow(last_hash, self.main_chain.get_difficulty().await, pow) {
+            // if pow is bad
+            return Err(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::WrongPow,
+            ))
+            .into_report();
         }
 
+        // get transactions for the block
         let transactions_amount = if MAX_TRANSACTIONS_PER_BLOCK > trxs_pool.len() {
             trxs_pool.len()
         } else {
             MAX_TRANSACTIONS_PER_BLOCK
         };
 
-        let mut to_return: Vec<TransactionableItem> = Vec::with_capacity(transactions_amount);
+        // get transactions
+        let transactions: Vec<_> = (0..transactions_amount)
+            .map(|_| unsafe { trxs_pool.pop().unwrap_unchecked() })
+            .collect();
 
-        let mut counter = 0;
+        // get hashes & remove transaction references
+        let mut trxs_hashes = self.trxs_hashes.write().await;
+        let transactions_hashes: Vec<_> = transactions
+            .iter()
+            .map(|trx| {
+                let hash = trx.hash();
+                trxs_hashes.remove(&hash);
+                hash
+            })
+            .collect();
+        drop(trxs_hashes);
 
-        while counter < transactions_amount {
-            if let Some(tr) = self.trxs_pool.write().await.pop() {
-                to_return.push(tr);
-            } else {
-                break;
-            }
+        // build merkle tree & get root
+        let mut merkle_tree = MerkleTree::new();
+        merkle_tree.add_objects(&transactions_hashes);
+        let merkle_tree_root = merkle_tree.get_root().clone();
 
-            counter += 1;
-        }
-        Some(to_return)
+        todo!()
     }
 
+    pub async fn emit_main_chain_block(
+        &self,
+        pow: BigUint,
+        addr: [u8; 33],
+    ) -> Result<Box<dyn MainChainBlock>, BlockChainTreeError> {
+        todo!()
+    }
     // pub fn get_pool(&mut self) -> &VecDeque<Box<dyn Transactionable>> {
     //     &self.trxs_pool
     // }

@@ -3,7 +3,6 @@ name = "blockchaintree"
 version = "0.1.0"
 authors = ["DoctorEenot <dreenot@gmail.com>"]
 edition = "2021"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
@@ -13,6 +12,7 @@ colored = ">=2"
 env_logger = "0.9.0"
 error-stack = "0.3.1"
 hex = "0.4.3"
+lazy_static = "1.4.0"
 log = "0.4.17"
 num-bigint = "0.4"
 num-traits = "0.2"

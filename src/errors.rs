@@ -167,6 +167,8 @@ sub_errors![
         GetFunds: "failed to get funds",
         GetOldFunds: "failed to get funds from old summary db",
         MoveSummaryDB: "failed to move summary database",
-        NewTransaction: "failed to create new transaction"
+        NewTransaction: "failed to create new transaction",
+        CreateMainChainBlock: "failed to create new block for the main chain",
+        WrongPow: "supplied pow does not satisfy requirements"
     }
 ];
