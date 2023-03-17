@@ -510,7 +510,18 @@ impl Chain {
             }))
     }
 
-    pub async fn check_pow_validity(&self, pow: BigUint) -> Result<bool, BlockChainTreeError> {
+    /// Checks if the supply pow is correct
+    ///
+    /// Takes hash of the last block for current time and checks against it
+    ///
+    /// Since this function checks data only in current time, it should not be used alone when adding new block,
+    ///
+    /// because of the way this implementation built it should be used with additional thread safety, such as locking `height` to ensure,
+    ///
+    /// that this function will get latest info
+    ///
+    /// P.S. it was made into separate function only because of mudularity and to provide raw API(later)
+    async fn check_pow_validity(&self, pow: BigUint) -> Result<bool, BlockChainTreeError> {
         let last_hash = match self.get_last_hash().await? {
             Some(hash) => hash,
             None => {
