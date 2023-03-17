@@ -168,7 +168,7 @@ impl TransactionBlock {
     pub fn build_merkle_tree(&mut self) -> Result<(), BlockError> {
         let mut new_merkle_tree = MerkleTree::new();
 
-        let res = new_merkle_tree.add_objects(self.transactions.clone());
+        let res = new_merkle_tree.add_objects(&self.transactions);
         if !res {
             return Err(Report::new(BlockError::TransactionBlock(
                 TxBlockErrorKind::BuildingMerkleTree,
