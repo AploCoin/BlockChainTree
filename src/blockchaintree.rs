@@ -19,7 +19,7 @@ use std::io::Write;
 use std::path::Path;
 use std::str::{self};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockWriteGuard};
 
 use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -323,9 +323,17 @@ impl Chain {
         *self.height.read().await
     }
 
+    pub async fn get_locked_height(&self) -> RwLockWriteGuard<u64> {
+        self.height.write().await
+    }
+
     /// Get current chain's difficulty
     pub async fn get_difficulty(&self) -> [u8; 32] {
         *self.difficulty.read().await
+    }
+
+    pub async fn get_locked_difficulty(&self) -> RwLockWriteGuard<[u8; 32]> {
+        self.difficulty.write().await
     }
 
     /// Get serialized block by it's height
@@ -1550,19 +1558,19 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to remove previous database")?;
 
-        fs::rename(sum_path, old_sum_path)
-            .into_report()
-            .change_context(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::MoveSummaryDB,
-            ))
-            .attach_printable("failed to rename folder for summary db")?;
-
-        fs::create_dir(sum_path)
+        fs::create_dir(old_sum_path)
             .into_report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to create folder for an old summarize db")?;
+
+        tools::copy_dir_all(sum_path, old_sum_path)
+            .into_report()
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to copy current db into old db")?;
 
         let result = sled::open(sum_path)
             .into_report()
@@ -1660,14 +1668,13 @@ impl BlockChainTree {
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
+        difficulty: [u8; 32],
     ) -> Result<TransactionBlock, BlockChainTreeError> {
         let mut trxs_pool = self.trxs_pool.write().await;
 
         let last_hash = self.main_chain.get_last_hash().await.change_context(
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
-
-        let difficulty = self.main_chain.get_difficulty().await;
 
         if !tools::check_pow(last_hash, difficulty, &pow) {
             // if pow is bad
@@ -1742,14 +1749,11 @@ impl BlockChainTree {
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
+        difficulty: [u8; 32],
     ) -> Result<SummarizeBlock, BlockChainTreeError> {
-        let trxs_pool = self.trxs_pool.write().await;
-
         let last_hash = self.main_chain.get_last_hash().await.change_context(
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
-
-        let difficulty = self.main_chain.get_difficulty().await;
 
         if !tools::check_pow(last_hash, difficulty, &pow) {
             // if pow is bad
@@ -1776,6 +1780,7 @@ impl BlockChainTree {
             MAIN_CHAIN_PAYMENT.clone(),
             ROOT_PRIVATE_ADDRESS,
         );
+        // TODO: add funds
 
         let block = SummarizeBlock::new(basic_info, founder_transaction.hash());
 
@@ -1791,10 +1796,15 @@ impl BlockChainTree {
         &self,
         pow: BigUint,
         addr: [u8; 33],
+        timestamp: u64,
     ) -> Result<Box<dyn MainChainBlock>, BlockChainTreeError> {
+        let difficulty = self.main_chain.get_locked_difficulty().await;
+        if self.main_chain.get_height().await as usize == BLOCKS_PER_ITERATION {
+            // new cycle
+            let block = self
+                .emit_summarize_block(pow, addr, timestamp, difficulty.clone())
+                .await?;
+        }
         todo!()
     }
-    // pub fn get_pool(&mut self) -> &VecDeque<Box<dyn Transactionable>> {
-    //     &self.trxs_pool
-    // }
 }
