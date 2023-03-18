@@ -1675,7 +1675,7 @@ impl BlockChainTree {
         // build merkle tree & get root
         let mut merkle_tree = MerkleTree::new();
         merkle_tree.add_objects(&transactions_hashes);
-        let merkle_tree_root = merkle_tree.get_root().clone();
+        let merkle_tree_root = *merkle_tree.get_root();
 
         let fee = self.main_chain.calculate_fee().await;
 
