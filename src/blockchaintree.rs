@@ -1543,7 +1543,7 @@ impl BlockChainTree {
 
     /// Move current summary database to old database
     ///
-    /// Removes old summary database and places current summary db on it's place, creates fresh summary db
+    /// Removes old summary database and places current summary db on it's place
     pub fn move_summary_database(&mut self) -> Result<(), BlockChainTreeError> {
         let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
         let sum_path = Path::new(AMMOUNT_SUMMARY);
@@ -1793,7 +1793,7 @@ impl BlockChainTree {
     }
 
     pub async fn emit_main_chain_block(
-        &self,
+        &mut self,
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
@@ -1802,9 +1802,17 @@ impl BlockChainTree {
         if self.main_chain.get_height().await as usize == BLOCKS_PER_ITERATION {
             // new cycle
             let block = self
-                .emit_summarize_block(pow, addr, timestamp, difficulty.clone())
+                .emit_summarize_block(pow, addr, timestamp, *difficulty)
                 .await?;
+
+            //self.move_summary_database()?;
+            Ok(Box::new(block))
+        } else {
+            let block = self
+                .emit_transaction_block(pow, addr, timestamp, *difficulty)
+                .await?;
+
+            Ok(Box::new(block))
         }
-        todo!()
     }
 }
