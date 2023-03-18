@@ -106,7 +106,7 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
     Ok(decoded_data)
 }
 
-pub fn check_pow(prev_hash: [u8; 32], difficulty: [u8; 32], pow: BigUint) -> bool {
+pub fn check_pow(prev_hash: [u8; 32], difficulty: [u8; 32], pow: &BigUint) -> bool {
     let mut hasher = Sha256::new();
     hasher.update(prev_hash);
     hasher.update(pow.to_bytes_be());

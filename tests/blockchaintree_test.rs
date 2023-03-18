@@ -1,6 +1,7 @@
 use blockchaintree::block::{self, BasicInfo, TransactionBlock};
-use blockchaintree::{self, transaction::Transactionable};
+use blockchaintree::{self, blockchaintree::ROOT_PRIVATE_ADDRESS, transaction::Transactionable};
 use num_bigint::ToBigUint;
+use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 static SENDER: &[u8; 33] = b"123456789012345678901234567890123";
 static RECIEVER: &[u8; 33] = b"123456789012345678901234567890123";
@@ -68,4 +69,13 @@ async fn chain_test() {
 
     let loaded_transaction = chain.find_transaction(&tr.hash()).await.unwrap().unwrap();
     assert_eq!(loaded_transaction.get_sender(), SENDER);
+}
+
+#[test]
+fn generate_public_root_key() {
+    let secp = Secp256k1::new();
+    let secret_key = SecretKey::from_slice(&ROOT_PRIVATE_ADDRESS).unwrap();
+    let public_key = PublicKey::from_secret_key(&secp, &secret_key);
+
+    println!("{:?}", public_key.serialize());
 }

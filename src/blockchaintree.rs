@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::block::{MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::block::{BasicInfo, MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
 use crate::merkletree::MerkleTree;
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
@@ -17,7 +17,7 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
-use std::str;
+use std::str::{self};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -52,10 +52,19 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
 ];
 // God is dead, noone will stop anarchy
 
+pub static ROOT_PRIVATE_ADDRESS: [u8; 32] = [1u8; 32];
+pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
+    3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96,
+    72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143,
+];
+
 lazy_static! {
     // one coin is 100_000_000 smol coins
+    static ref COIN_FRACTIONS: BigUint = BigUint::from(100_000_000usize);
     static ref INITIAL_FEE: BigUint = BigUint::from(16666666usize); // 100_000_000//4
     static ref FEE_STEP: BigUint = BigUint::from(392156usize); // 100_000_000//255
+    static ref MAIN_CHAIN_PAYMENT: BigUint = INITIAL_FEE.clone();
+    static ref COINS_PER_CYCLE:BigUint = (MAIN_CHAIN_PAYMENT.clone()*MAX_TRANSACTIONS_PER_BLOCK*BLOCKS_PER_ITERATION) + COIN_FRACTIONS.clone()*10000usize;
 }
 
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
@@ -534,11 +543,23 @@ impl Chain {
         let last_hash = self.get_last_hash().await?;
 
         let difficulty = self.get_difficulty().await;
-        Ok(tools::check_pow(last_hash, difficulty, pow))
+        Ok(tools::check_pow(last_hash, difficulty, &pow))
     }
 
+    /// Calculate fee for the current difficulty
+    ///
+    /// takes current difficulty and calculates fee for it
     pub async fn calculate_fee(&self) -> BigUint {
-        todo!()
+        let mut leading_zeroes = 0;
+        for byte in self.get_difficulty().await {
+            let bytes_leading_zeroes = byte.leading_zeros() as usize;
+            leading_zeroes += bytes_leading_zeroes;
+            if bytes_leading_zeroes < 8 {
+                break;
+            }
+        }
+
+        INITIAL_FEE.clone() + (FEE_STEP.clone() * (leading_zeroes - 1))
     }
 }
 
@@ -952,6 +973,33 @@ impl BlockChainTree {
                 BCTreeErrorKind::InitWithoutConfig,
             ))
             .attach_printable("failed to open summary db")?;
+
+        // set initial value for the root address
+        if summary_db
+            .get(ROOT_PUBLIC_ADDRESS)
+            .into_report()
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::InitWithoutConfig,
+            ))
+            .attach_printable(
+                "failed to get amount of coins in the summary db for the root address",
+            )?
+            .is_none()
+        {
+            let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&COINS_PER_CYCLE));
+            tools::dump_biguint(&COINS_PER_CYCLE, &mut dump).change_context(
+                BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
+            )?;
+            summary_db
+                .insert(ROOT_PUBLIC_ADDRESS, dump)
+                .into_report()
+                .change_context(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::InitWithoutConfig,
+                ))
+                .attach_printable(
+                    "failed to set amount of coins in the summary db for the root address",
+                )?;
+        }
 
         let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
 
@@ -1567,39 +1615,11 @@ impl BlockChainTree {
         Ok(())
     }
 
-    /// Pop <= MAX_TRANSACTIONS_PER_BLOCK transactions from the pool
-    // pub async fn pop_last_transactions(&mut self) -> Option<Vec<TransactionableItem>> {
-    //     let trxs_pool = self.trxs_pool.read().await;
-    //     if trxs_pool.is_empty() {
-    //         return None;
-    //     }
-
-    //     let transactions_amount = if MAX_TRANSACTIONS_PER_BLOCK > trxs_pool.len() {
-    //         trxs_pool.len()
-    //     } else {
-    //         MAX_TRANSACTIONS_PER_BLOCK
-    //     };
-
-    //     let mut to_return: Vec<TransactionableItem> = Vec::with_capacity(transactions_amount);
-
-    //     let mut counter = 0;
-
-    //     while counter < transactions_amount {
-    //         if let Some(tr) = self.trxs_pool.write().await.pop() {
-    //             to_return.push(tr);
-    //         } else {
-    //             break;
-    //         }
-
-    //         counter += 1;
-    //     }
-    //     Some(to_return)
-    // }
-
     async fn emit_transaction_block(
         &self,
         pow: BigUint,
         addr: [u8; 33],
+        timestamp: u64,
     ) -> Result<TransactionBlock, BlockChainTreeError> {
         let mut trxs_pool = self.trxs_pool.write().await;
 
@@ -1607,7 +1627,9 @@ impl BlockChainTree {
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
 
-        if !tools::check_pow(last_hash, self.main_chain.get_difficulty().await, pow) {
+        let difficulty = self.main_chain.get_difficulty().await;
+
+        if !tools::check_pow(last_hash, difficulty, &pow) {
             // if pow is bad
             return Err(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::WrongPow,
@@ -1623,9 +1645,20 @@ impl BlockChainTree {
         };
 
         // get transactions
-        let transactions: Vec<_> = (0..transactions_amount)
-            .map(|_| unsafe { trxs_pool.pop().unwrap_unchecked() })
-            .collect();
+        let mut transactions: Vec<Box<dyn Transactionable + Send + Sync>> = Vec::new();
+        if self.get_funds(&ROOT_PUBLIC_ADDRESS)? >= MAIN_CHAIN_PAYMENT.clone() {
+            // if there is enough coins left in the root address make payment transaction
+            transactions.push(Box::new(Transaction::new(
+                ROOT_PUBLIC_ADDRESS,
+                addr,
+                timestamp,
+                MAIN_CHAIN_PAYMENT.clone(),
+                ROOT_PRIVATE_ADDRESS,
+            )));
+        }
+        transactions.extend(
+            (0..transactions_amount).map(|_| unsafe { trxs_pool.pop().unwrap_unchecked() }),
+        );
 
         // get hashes & remove transaction references
         let mut trxs_hashes = self.trxs_hashes.write().await;
@@ -1643,6 +1676,16 @@ impl BlockChainTree {
         let mut merkle_tree = MerkleTree::new();
         merkle_tree.add_objects(&transactions_hashes);
         let merkle_tree_root = merkle_tree.get_root().clone();
+
+        let fee = self.main_chain.calculate_fee().await;
+
+        let basic_info = BasicInfo::new(
+            timestamp,
+            pow,
+            last_hash,
+            self.main_chain.get_height().await,
+            difficulty,
+        );
 
         todo!()
     }
