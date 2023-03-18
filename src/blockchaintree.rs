@@ -1727,12 +1727,62 @@ impl BlockChainTree {
             difficulty,
         );
 
-        // add transactions to the main chain
-        self.main_chain.add_transactions_raw(transactions).await?;
-
         // add block to the main chain
         let block = TransactionBlock::new(transactions_hashes, fee, basic_info, merkle_tree_root);
         self.main_chain.add_block_raw(&block).await?;
+
+        // add transactions to the main chain
+        self.main_chain.add_transactions_raw(transactions).await?;
+
+        Ok(block)
+    }
+
+    async fn emit_summarize_block(
+        &self,
+        pow: BigUint,
+        addr: [u8; 33],
+        timestamp: u64,
+    ) -> Result<SummarizeBlock, BlockChainTreeError> {
+        let trxs_pool = self.trxs_pool.write().await;
+
+        let last_hash = self.main_chain.get_last_hash().await.change_context(
+            BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
+        )?;
+
+        let difficulty = self.main_chain.get_difficulty().await;
+
+        if !tools::check_pow(last_hash, difficulty, &pow) {
+            // if pow is bad
+            return Err(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::WrongPow,
+            ))
+            .into_report();
+        }
+
+        let fee = self.main_chain.calculate_fee().await;
+
+        let basic_info = BasicInfo::new(
+            timestamp,
+            pow,
+            last_hash,
+            self.main_chain.get_height().await,
+            difficulty,
+        );
+
+        let founder_transaction = Transaction::new(
+            ROOT_PUBLIC_ADDRESS,
+            addr,
+            timestamp,
+            MAIN_CHAIN_PAYMENT.clone(),
+            ROOT_PRIVATE_ADDRESS,
+        );
+
+        let block = SummarizeBlock::new(basic_info, founder_transaction.hash());
+
+        self.main_chain.add_block_raw(&block).await?;
+        self.main_chain
+            .add_transaction_raw(founder_transaction)
+            .await?;
 
         Ok(block)
     }

@@ -545,11 +545,11 @@ impl TokenBlock {
 
 pub struct SummarizeBlock {
     default_info: BasicInfo,
-    founder_transaction: Transaction,
+    founder_transaction: [u8; 32],
 }
 
 impl SummarizeBlock {
-    pub fn new(default_info: BasicInfo, founder_transaction: Transaction) -> SummarizeBlock {
+    pub fn new(default_info: BasicInfo, founder_transaction: [u8; 32]) -> SummarizeBlock {
         SummarizeBlock {
             default_info,
             founder_transaction,
@@ -559,7 +559,7 @@ impl SummarizeBlock {
     pub fn get_dump_size(&self) -> usize {
         1 // header
         +self.default_info.get_dump_size()
-        +self.founder_transaction.get_dump_size()
+        +32
     }
 
     pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
@@ -569,13 +569,7 @@ impl SummarizeBlock {
         to_return.push(Headers::SummarizeBlock as u8);
 
         // dump transaction
-        let mut transaction_dump = self
-            .founder_transaction
-            .dump()
-            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Dump))?;
-
-        to_return.extend((transaction_dump.len() as u64).to_be_bytes());
-        to_return.append(&mut transaction_dump);
+        to_return.extend(self.founder_transaction);
 
         // dump basic info
         self.default_info.dump(&mut to_return)?;
@@ -584,42 +578,18 @@ impl SummarizeBlock {
     }
 
     pub fn parse(data: &[u8]) -> Result<SummarizeBlock, BlockError> {
-        if data.len() <= 8 {
+        if data.len() <= 32 {
             return Err(
                 Report::new(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))
-                    .attach_printable("data length <= 8"),
+                    .attach_printable("data length <= 32"),
             );
         }
-        let mut offset: usize = 0;
 
         // parse transaction
-        let transaction_size: usize =
-            u64::from_be_bytes(data[0..8].try_into().unwrap()) as usize - 1;
-        offset += 8;
-        if data.len() < transaction_size + 8 {
-            return Err(
-                Report::new(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))
-                    .attach_printable("data length < tx size + 8"),
-            );
-        }
-        if data[offset] != Headers::Transaction as u8 {
-            return Err(
-                Report::new(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))
-                    .attach_printable("headers not found"),
-            );
-        }
-        offset += 1;
-
-        let founder_transaction = Transaction::parse(
-            &data[offset..offset + transaction_size],
-            transaction_size as u64,
-        )
-        .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))?;
-
-        offset += transaction_size;
+        let founder_transaction: [u8; 32] = unsafe { data[0..32].try_into().unwrap_unchecked() };
 
         // parse default info
-        let default_info = BasicInfo::parse(&data[offset..])
+        let default_info = BasicInfo::parse(&data[32..])
             .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Parse))?;
 
         Ok(SummarizeBlock {
