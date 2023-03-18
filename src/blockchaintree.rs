@@ -240,6 +240,41 @@ impl Chain {
         Ok(())
     }
 
+    /// Add a batch of transactions
+    pub async fn add_transactions_raw(
+        &self,
+        transactions: Vec<Box<dyn Transactionable + Send + Sync>>,
+    ) -> Result<(), BlockChainTreeError> {
+        let mut batch = sled::Batch::default();
+        for transaction in transactions {
+            batch.insert(
+                &transaction.hash(),
+                transaction
+                    .dump()
+                    .change_context(BlockChainTreeError::Chain(
+                        ChainErrorKind::AddingTransaction,
+                    ))?,
+            );
+        }
+
+        self.transactions
+            .apply_batch(batch)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))?;
+
+        self.transactions
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))?;
+
+        Ok(())
+    }
+
     /// Get deserialized transaction by it's hash
     pub async fn find_transaction(
         &self,
@@ -1615,6 +1650,11 @@ impl BlockChainTree {
         Ok(())
     }
 
+    /// Create transaction block
+    ///
+    /// This function validates pow, pops transactions from trxs_pool, then
+    ///
+    /// adds new transactions block and poped transactions to the main chain
     async fn emit_transaction_block(
         &self,
         pow: BigUint,
@@ -1687,7 +1727,14 @@ impl BlockChainTree {
             difficulty,
         );
 
-        todo!()
+        // add transactions to the main chain
+        self.main_chain.add_transactions_raw(transactions).await?;
+
+        // add block to the main chain
+        let block = TransactionBlock::new(transactions_hashes, fee, basic_info, merkle_tree_root);
+        self.main_chain.add_block_raw(&block).await?;
+
+        Ok(block)
     }
 
     pub async fn emit_main_chain_block(
