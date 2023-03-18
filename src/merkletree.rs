@@ -84,32 +84,38 @@ impl MerkleTree {
         }
     }
 
-    pub fn add_objects(&mut self, mut input: Vec<[u8; 32]>) -> bool {
+    pub fn add_objects(&mut self, input: &Vec<[u8; 32]>) -> bool {
         if !self.array_representation.is_empty() {
             return false;
         }
 
         self.initial_amount_of_inputs = input.len();
 
-        let initial_length = input.len();
-        self.depth = find_closest_power_of_2(initial_length);
-        if initial_length % 2 != 0 {
-            for _ in initial_length..usize::pow(2, self.depth as u32) {
-                input.push(PADDING_HASH);
-            }
-            self.depth = find_closest_power_of_2(input.len());
-        }
+        let new_size = if self.initial_amount_of_inputs % 2 != 0 {
+            let size = usize::pow(
+                2,
+                find_closest_power_of_2(self.initial_amount_of_inputs) as u32,
+            );
+            self.depth = find_closest_power_of_2(size);
+            size
+        } else {
+            self.depth = find_closest_power_of_2(self.initial_amount_of_inputs);
+            self.initial_amount_of_inputs
+        };
 
         let amount_of_nodes: usize = usize::pow(2, self.depth as u32) - 1;
 
         self.array_representation.reserve(amount_of_nodes);
 
-        for _ in 0..amount_of_nodes - input.len() {
+        for _ in 0..amount_of_nodes - new_size {
             self.array_representation.push(None);
         }
 
         for inp in input.iter() {
             self.array_representation.push(Some(*inp));
+        }
+        for _ in input.len()..new_size {
+            self.array_representation.push(Some(PADDING_HASH));
         }
         self.populate_tree(self.array_representation.len(), true);
 
@@ -206,7 +212,7 @@ pub fn verify_proof(hash: &[u8; 32], root: &[u8; 32], proof: Vec<&[u8; 32]>) -> 
         *i = hash[n] & proof[0][n];
     }
     hasher.update(calculated_root);
-    calculated_root = hasher.finalize().as_slice().try_into().unwrap();
+    calculated_root = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
 
     for idx in proof.iter().skip(1) {
         let mut hasher = Sha256::new();
@@ -215,7 +221,7 @@ pub fn verify_proof(hash: &[u8; 32], root: &[u8; 32], proof: Vec<&[u8; 32]>) -> 
             *item &= idx[n]
         }
         hasher.update(calculated_root);
-        calculated_root = hasher.finalize().as_slice().try_into().unwrap();
+        calculated_root = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
     }
 
     for i in 0..32 {
@@ -224,4 +230,27 @@ pub fn verify_proof(hash: &[u8; 32], root: &[u8; 32], proof: Vec<&[u8; 32]>) -> 
         }
     }
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::MerkleTree;
+
+    #[test]
+    fn merkle_tree_test() {
+        let mut merkle_tree = MerkleTree::new();
+
+        merkle_tree.add_objects(&vec![[1u8; 32], [1u8; 32], [1u8; 32], [1u8; 32], [1u8; 32]]);
+
+        let root = merkle_tree.get_root().clone();
+        println!("Root: {:?}", root);
+
+        assert_eq!(
+            [
+                111, 57, 169, 50, 108, 105, 72, 100, 55, 246, 58, 248, 58, 198, 79, 115, 83, 127,
+                186, 9, 169, 151, 207, 78, 205, 188, 34, 250, 175, 218, 23, 155
+            ],
+            root
+        );
+    }
 }

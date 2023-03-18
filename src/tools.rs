@@ -6,6 +6,7 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
+use std::mem::transmute;
 use std::path::Path;
 
 pub fn dump_biguint(number: &BigUint, buffer: &mut Vec<u8>) -> Result<(), ToolsError> {
@@ -103,4 +104,29 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
         .change_context(ToolsError::Zstd(ZstdErrorKind::DecompressingFile))?;
 
     Ok(decoded_data)
+}
+
+pub fn check_pow(prev_hash: [u8; 32], difficulty: [u8; 32], pow: &BigUint) -> bool {
+    let mut hasher = Sha256::new();
+    hasher.update(prev_hash);
+    hasher.update(pow.to_bytes_be());
+    let result: [u8; 32] = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
+    let result: [u64; 4] = unsafe { transmute(result) };
+
+    let difficulty: [u64; 4] = unsafe { transmute(difficulty) };
+
+    let mut to_return = false;
+
+    for (r, d) in result.iter().zip(difficulty) {
+        match r.cmp(&d) {
+            std::cmp::Ordering::Less => {
+                to_return = true;
+                break;
+            }
+            std::cmp::Ordering::Equal => {}
+            std::cmp::Ordering::Greater => break,
+        }
+    }
+
+    to_return
 }

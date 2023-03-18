@@ -28,7 +28,7 @@ pub struct BasicInfo {
     timestamp: u64,
     pow: BigUint,
     previous_hash: [u8; 32],
-    current_hash: [u8; 32],
+    //current_hash: [u8; 32],
     height: u64,
     difficulty: [u8; 32],
 }
@@ -39,7 +39,7 @@ impl BasicInfo {
         timestamp: u64,
         pow: BigUint,
         previous_hash: [u8; 32],
-        current_hash: [u8; 32],
+        //current_hash: [u8; 32],
         height: u64,
         difficulty: [u8; 32],
     ) -> BasicInfo {
@@ -48,7 +48,7 @@ impl BasicInfo {
             timestamp,
             pow,
             previous_hash,
-            current_hash,
+            //current_hash,
             height,
             difficulty,
         }
@@ -68,10 +68,10 @@ impl BasicInfo {
             buffer.push(*byte);
         }
 
-        // dumping current hash
-        for byte in self.current_hash.iter() {
-            buffer.push(*byte);
-        }
+        // // dumping current hash
+        // for byte in self.current_hash.iter() {
+        //     buffer.push(*byte);
+        // }
 
         // dumping height
         for byte in self.height.to_be_bytes().iter() {
@@ -107,10 +107,10 @@ impl BasicInfo {
             unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
 
-        // parsing current hash
-        let current_hash: [u8; 32] =
-            unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
-        index += 32;
+        // // parsing current hash
+        // let current_hash: [u8; 32] =
+        //     unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
+        // index += 32;
 
         // parsing height
         let height: u64 = bytes_to_u64!(data, index);
@@ -129,7 +129,7 @@ impl BasicInfo {
             timestamp,
             pow,
             previous_hash,
-            current_hash,
+            //current_hash,
             height,
             difficulty,
         })
@@ -168,7 +168,7 @@ impl TransactionBlock {
     pub fn build_merkle_tree(&mut self) -> Result<(), BlockError> {
         let mut new_merkle_tree = MerkleTree::new();
 
-        let res = new_merkle_tree.add_objects(self.transactions.clone());
+        let res = new_merkle_tree.add_objects(&self.transactions);
         if !res {
             return Err(Report::new(BlockError::TransactionBlock(
                 TxBlockErrorKind::BuildingMerkleTree,
@@ -404,7 +404,7 @@ impl TransactionBlock {
     }
 
     pub fn hash(&self) -> Result<[u8; 32], BlockError> {
-        let dump: Vec<u8> = self.dump().unwrap();
+        let dump: Vec<u8> = self.dump()?;
 
         Ok(tools::hash(&dump))
     }
@@ -658,54 +658,3 @@ pub trait MainChainBlock {
     fn get_dump_size(&self) -> usize;
     fn dump(&self) -> Result<Vec<u8>, BlockError>;
 }
-
-// pub struct SumTransactionBlock {
-//     transaction_block: Option<TransactionBlock>,
-//     summarize_block: Option<SummarizeBlock>,
-// }
-
-// impl SumTransactionBlock {
-//     pub fn new(
-//         transaction_block: Option<TransactionBlock>,
-//         summarize_block: Option<SummarizeBlock>,
-//     ) -> SumTransactionBlock {
-//         SumTransactionBlock {
-//             transaction_block,
-//             summarize_block,
-//         }
-//     }
-
-//     pub fn is_empty(&self) -> bool {
-//         self.summarize_block.is_none() && self.transaction_block.is_none()
-//     }
-
-//     pub fn is_transaction_block(&self) -> bool {
-//         self.transaction_block.is_some()
-//     }
-//     pub fn is_summarize_block(&self) -> bool {
-//         self.summarize_block.is_some()
-//     }
-//     pub fn hash(&self) -> Result<[u8; 32], BlockError> {
-//         if self.is_transaction_block() {
-//             self.transaction_block.as_ref().unwrap().hash()
-//         } else {
-//             self.summarize_block.as_ref().unwrap().hash()
-//         }
-//     }
-
-//     pub fn get_dump_size(&self) -> usize {
-//         if self.is_transaction_block() {
-//             return self.transaction_block.as_ref().unwrap().get_dump_size();
-//         } else {
-//             return self.summarize_block.as_ref().unwrap().get_dump_size();
-//         }
-//     }
-
-//     pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
-//         if self.is_transaction_block() {
-//             return self.transaction_block.as_ref().unwrap().dump();
-//         } else {
-//             return self.summarize_block.as_ref().unwrap().dump();
-//         }
-//     }
-// }

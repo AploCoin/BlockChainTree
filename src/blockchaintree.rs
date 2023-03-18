@@ -1,5 +1,6 @@
 #![allow(non_snake_case)]
-use crate::block::{MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::block::{BasicInfo, MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::merkletree::MerkleTree;
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
@@ -8,6 +9,7 @@ use std::convert::TryInto;
 
 use crate::dump_headers::Headers;
 use hex::ToHex;
+use lazy_static::lazy_static;
 use num_traits::Zero;
 use sled::Db;
 use std::fs;
@@ -15,7 +17,7 @@ use std::fs::File;
 use std::io::Read;
 use std::io::Write;
 use std::path::Path;
-use std::str;
+use std::str::{self};
 use std::sync::Arc;
 use tokio::sync::RwLock;
 
@@ -50,6 +52,21 @@ static BEGINNING_DIFFICULTY: [u8; 32] = [
 ];
 // God is dead, noone will stop anarchy
 
+pub static ROOT_PRIVATE_ADDRESS: [u8; 32] = [1u8; 32];
+pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
+    3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96,
+    72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143,
+];
+
+lazy_static! {
+    // one coin is 100_000_000 smol coins
+    static ref COIN_FRACTIONS: BigUint = BigUint::from(100_000_000usize);
+    static ref INITIAL_FEE: BigUint = BigUint::from(16666666usize); // 100_000_000//4
+    static ref FEE_STEP: BigUint = BigUint::from(392156usize); // 100_000_000//255
+    static ref MAIN_CHAIN_PAYMENT: BigUint = INITIAL_FEE.clone();
+    static ref COINS_PER_CYCLE:BigUint = (MAIN_CHAIN_PAYMENT.clone()*MAX_TRANSACTIONS_PER_BLOCK*BLOCKS_PER_ITERATION) + COIN_FRACTIONS.clone()*10000usize;
+}
+
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
@@ -69,6 +86,7 @@ pub struct Chain {
 }
 
 impl Chain {
+    /// Open chain with config
     pub fn new() -> Result<Chain, BlockChainTreeError> {
         let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
@@ -137,7 +155,15 @@ impl Chain {
         })
     }
 
-    pub async fn add_block(&self, block: &impl MainChainBlock) -> Result<(), BlockChainTreeError> {
+    /// Adds new block to the chain db, raw API function
+    ///
+    /// Adds block and sets heigh reference for it
+    ///
+    /// Doesn't check for blocks validity, just adds it directly to database
+    pub async fn add_block_raw(
+        &self,
+        block: &impl MainChainBlock,
+    ) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
@@ -159,7 +185,7 @@ impl Chain {
 
         *height += 1;
 
-        drop(height);
+        //drop(height);
 
         self.db
             .flush_async()
@@ -176,8 +202,12 @@ impl Chain {
         Ok(())
     }
 
-    /// dumps only transactions as of now, fix later
-    pub async fn add_transaction(
+    /// Add new transaction to the chain, raw API function
+    ///
+    /// Adds transaction into db of transactions, transaction should be also registered in the block
+    ///
+    /// Doesn't validate transaction
+    pub async fn add_transaction_raw(
         &self,
         transaction: impl Transactionable,
     ) -> Result<(), BlockChainTreeError> {
@@ -210,6 +240,7 @@ impl Chain {
         Ok(())
     }
 
+    /// Get deserialized transaction by it's hash
     pub async fn find_transaction(
         &self,
         hash: &[u8; 32],
@@ -241,6 +272,7 @@ impl Chain {
         Ok(Some(transaction))
     }
 
+    /// Check whether transaction exists in the chain
     pub async fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
         Ok(self
             .transactions
@@ -251,14 +283,17 @@ impl Chain {
             .is_some())
     }
 
+    /// Get current chain's height
     pub async fn get_height(&self) -> u64 {
         *self.height.read().await
     }
 
+    /// Get current chain's difficulty
     pub async fn get_difficulty(&self) -> [u8; 32] {
         *self.difficulty.read().await
     }
 
+    /// Get serialized block by it's height
     pub async fn find_raw_by_height(
         &self,
         height: u64,
@@ -280,6 +315,7 @@ impl Chain {
         Ok(None)
     }
 
+    /// Get serialized block by it's hash
     pub async fn find_raw_by_hash(
         &self,
         hash: &[u8; 32],
@@ -306,6 +342,7 @@ impl Chain {
         Ok(block)
     }
 
+    /// Get deserialized block by height
     pub async fn find_by_height(
         &self,
         height: u64,
@@ -345,6 +382,7 @@ impl Chain {
         )
     }
 
+    /// Get deserialized block by it's hash
     pub async fn find_by_hash(
         &self,
         hash: &[u8; 32],
@@ -371,6 +409,9 @@ impl Chain {
         Ok(block)
     }
 
+    /// Dump config
+    ///
+    /// Dumps chain's config
     pub async fn dump_config(&self) -> Result<(), BlockChainTreeError> {
         let root = String::from(MAIN_CHAIN_DIRECTORY);
         let path_config = root + CONFIG_FILE;
@@ -397,6 +438,9 @@ impl Chain {
         Ok(())
     }
 
+    /// Create new chain
+    ///
+    /// Creates new chain without config, creates necessary folders
     pub fn new_without_config(
         root_path: &str,
         genesis_hash: &[u8; 32],
@@ -442,6 +486,16 @@ impl Chain {
         })
     }
 
+    /// Get serialized last block if the chain
+    pub async fn get_last_raw_block(&self) -> Result<Option<Vec<u8>>, BlockChainTreeError> {
+        let height = self.height.read().await;
+        let last_block_index = *height - 1;
+        drop(height);
+
+        self.find_raw_by_height(last_block_index).await
+    }
+
+    /// Get deserialized last block of the chain
     pub async fn get_last_block(
         &self,
     ) -> Result<Option<Box<dyn MainChainBlock>>, BlockChainTreeError> {
@@ -450,6 +504,62 @@ impl Chain {
         drop(height);
 
         self.find_by_height(last_block_index).await
+    }
+
+    /// Get hash of the last block in chain
+    ///
+    /// Gets hash from the last record in height reference db
+    pub async fn get_last_hash(&self) -> Result<[u8; 32], BlockChainTreeError> {
+        if self.get_height().await == 0 {
+            return Ok(GENESIS_BLOCK);
+        }
+        Ok(self
+            .height_reference
+            .last()
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?
+            .map(|(hash, height)| {
+                let mut hash_arr = [0u8; 32];
+                hash.iter()
+                    .zip(hash_arr.iter_mut())
+                    .for_each(|(val, cell)| *cell = *val);
+                hash_arr
+            })
+            .unwrap_or(GENESIS_BLOCK))
+    }
+
+    /// Checks if the supplied pow is correct
+    ///
+    /// Takes hash of the last block for current time and checks against it
+    ///
+    /// Since this function checks data only in current time, it should not be used alone when adding new block,
+    ///
+    /// because of the way this implementation built it should be used with additional thread safety, such as locking `height` to ensure,
+    ///
+    /// that this function will get latest info
+    ///
+    /// P.S. it was made into separate function only because of mudularity and to provide raw API(later)
+    async fn check_pow_validity(&self, pow: BigUint) -> Result<bool, BlockChainTreeError> {
+        let last_hash = self.get_last_hash().await?;
+
+        let difficulty = self.get_difficulty().await;
+        Ok(tools::check_pow(last_hash, difficulty, &pow))
+    }
+
+    /// Calculate fee for the current difficulty
+    ///
+    /// takes current difficulty and calculates fee for it
+    pub async fn calculate_fee(&self) -> BigUint {
+        let mut leading_zeroes = 0;
+        for byte in self.get_difficulty().await {
+            let bytes_leading_zeroes = byte.leading_zeros() as usize;
+            leading_zeroes += bytes_leading_zeroes;
+            if bytes_leading_zeroes < 8 {
+                break;
+            }
+        }
+
+        INITIAL_FEE.clone() + (FEE_STEP.clone() * (leading_zeroes - 1))
     }
 }
 
@@ -463,6 +573,7 @@ pub struct DerivativeChain {
 }
 
 impl DerivativeChain {
+    /// Open chain with config
     pub fn new(root_path: &str) -> Result<DerivativeChain, BlockChainTreeError> {
         let root = String::from(root_path);
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
@@ -546,6 +657,7 @@ impl DerivativeChain {
         })
     }
 
+    /// Adds block to the chain, sets heigh reference
     pub async fn add_block(&mut self, block: &TokenBlock) -> Result<(), BlockChainTreeError> {
         let dump = block
             .dump()
@@ -588,18 +700,22 @@ impl DerivativeChain {
         Ok(())
     }
 
+    /// Get current height of the chain
     pub fn get_height(&self) -> u64 {
         self.height
     }
 
+    /// Get current difficulty of the chain
     pub fn get_difficulty(&self) -> [u8; 32] {
         self.difficulty
     }
 
+    /// Get global height of the chain
     pub fn get_global_height(&self) -> u64 {
         self.global_height
     }
 
+    /// Get deserialized block by it's height
     pub fn find_by_height(&self, height: u64) -> Result<Option<TokenBlock>, BlockChainTreeError> {
         if height > self.height {
             return Ok(None);
@@ -631,6 +747,7 @@ impl DerivativeChain {
         Ok(Some(block))
     }
 
+    /// Get deserialized block by it's hash
     pub fn find_by_hash(&self, hash: &[u8; 32]) -> Result<Option<TokenBlock>, BlockChainTreeError> {
         let height = match self
             .height_reference
@@ -655,6 +772,7 @@ impl DerivativeChain {
         Ok(block)
     }
 
+    /// Dump config of the chain
     pub fn dump_config(&self, root_path: &str) -> Result<(), BlockChainTreeError> {
         let root = String::from(root_path);
         let path_config = root + CONFIG_FILE;
@@ -697,6 +815,7 @@ impl DerivativeChain {
         Ok(())
     }
 
+    /// Open chain without config, sets up all directories
     pub fn without_config(
         root_path: &str,
         genesis_hash: &[u8; 32],
@@ -735,6 +854,7 @@ impl DerivativeChain {
         })
     }
 
+    /// Get deserialized last block of the chain
     pub fn get_last_block(&self) -> Result<Option<TokenBlock>, BlockChainTreeError> {
         self.find_by_height(self.height - 1)
     }
@@ -751,6 +871,9 @@ pub struct BlockChainTree {
 }
 
 impl BlockChainTree {
+    /// Open BlockChainTree
+    ///
+    /// opens blockchain tree with existing config
     pub fn with_config() -> Result<BlockChainTree, BlockChainTreeError> {
         let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
 
@@ -837,6 +960,9 @@ impl BlockChainTree {
         })
     }
 
+    /// Open BlockChainTree
+    ///
+    /// opens blockchain tree without config
     pub fn without_config() -> Result<BlockChainTree, BlockChainTreeError> {
         let summary_db_path = Path::new(&AMMOUNT_SUMMARY);
 
@@ -847,6 +973,33 @@ impl BlockChainTree {
                 BCTreeErrorKind::InitWithoutConfig,
             ))
             .attach_printable("failed to open summary db")?;
+
+        // set initial value for the root address
+        if summary_db
+            .get(ROOT_PUBLIC_ADDRESS)
+            .into_report()
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::InitWithoutConfig,
+            ))
+            .attach_printable(
+                "failed to get amount of coins in the summary db for the root address",
+            )?
+            .is_none()
+        {
+            let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&COINS_PER_CYCLE));
+            tools::dump_biguint(&COINS_PER_CYCLE, &mut dump).change_context(
+                BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
+            )?;
+            summary_db
+                .insert(ROOT_PUBLIC_ADDRESS, dump)
+                .into_report()
+                .change_context(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::InitWithoutConfig,
+                ))
+                .attach_printable(
+                    "failed to set amount of coins in the summary db for the root address",
+                )?;
+        }
 
         let old_summary_db_path = Path::new(&OLD_AMMOUNT_SUMMARY);
 
@@ -885,6 +1038,9 @@ impl BlockChainTree {
         })
     }
 
+    /// Dump Transactions pool
+    ///
+    /// Dumps Transactions pool into folder specified as static
     pub async fn dump_pool(&self) -> Result<(), BlockChainTreeError> {
         let pool_path = String::from(BLOCKCHAIN_DIRECTORY) + TRANSACTIONS_POOL;
         let pool_path = Path::new(&pool_path);
@@ -936,6 +1092,9 @@ impl BlockChainTree {
         Ok(())
     }
 
+    /// Get derivative chain
+    ///
+    /// Gets existing derivative chain(checks by path), places into inner field `derivatives`, returnes pointer to chain
     pub async fn get_derivative_chain(
         &self,
         addr: &[u8; 33],
@@ -968,6 +1127,9 @@ impl BlockChainTree {
         self.main_chain.clone()
     }
 
+    /// Creates derivative chain
+    ///
+    /// Creates neccessary folders for derivative chain, creates chain, places into inner field `derivatives`, returns pointer to chain
     pub async fn create_derivative_chain(
         &self,
         addr: &[u8; 33],
@@ -1022,6 +1184,9 @@ impl BlockChainTree {
             .clone());
     }
 
+    /// Check main folders for BlockChainTree
+    ///
+    /// Checks for required folders, if some not found will create them
     pub fn check_main_folders() -> Result<(), BlockChainTreeError> {
         let root = Path::new(BLOCKCHAIN_DIRECTORY);
         if !root.exists() {
@@ -1123,6 +1288,9 @@ impl BlockChainTree {
 
     // summary data bases functions
 
+    /// Add funds for address
+    ///
+    /// Adds funs for specified address in the summary db
     pub async fn add_funds(
         &self,
         addr: &[u8; 33],
@@ -1211,6 +1379,9 @@ impl BlockChainTree {
         }
     }
 
+    /// Decrease funds
+    ///
+    /// Decreases funds for specified address in the summary db
     pub async fn decrease_funds(
         &self,
         addr: &[u8; 33],
@@ -1280,6 +1451,9 @@ impl BlockChainTree {
         }
     }
 
+    /// Get funds
+    ///
+    /// Gets funds for specified address from summary db
     pub fn get_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
         match Option::as_ref(&self.summary_db).as_ref().unwrap().get(addr) {
             Ok(None) => Ok(Zero::zero()),
@@ -1301,6 +1475,9 @@ impl BlockChainTree {
         }
     }
 
+    /// Get old funds
+    ///
+    /// Gets old funds for specified address from previous summary db
     pub fn get_old_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
         match Option::as_ref(&self.old_summary_db)
             .as_ref()
@@ -1321,6 +1498,9 @@ impl BlockChainTree {
         }
     }
 
+    /// Move current summary database to old database
+    ///
+    /// Removes old summary database and places current summary db on it's place, creates fresh summary db
     pub fn move_summary_database(&mut self) -> Result<(), BlockChainTreeError> {
         let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
         let sum_path = Path::new(AMMOUNT_SUMMARY);
@@ -1435,34 +1615,88 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn pop_last_transactions(&mut self) -> Option<Vec<TransactionableItem>> {
-        let trxs_pool = self.trxs_pool.read().await;
-        if trxs_pool.is_empty() {
-            return None;
+    async fn emit_transaction_block(
+        &self,
+        pow: BigUint,
+        addr: [u8; 33],
+        timestamp: u64,
+    ) -> Result<TransactionBlock, BlockChainTreeError> {
+        let mut trxs_pool = self.trxs_pool.write().await;
+
+        let last_hash = self.main_chain.get_last_hash().await.change_context(
+            BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
+        )?;
+
+        let difficulty = self.main_chain.get_difficulty().await;
+
+        if !tools::check_pow(last_hash, difficulty, &pow) {
+            // if pow is bad
+            return Err(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::WrongPow,
+            ))
+            .into_report();
         }
 
+        // get transactions for the block
         let transactions_amount = if MAX_TRANSACTIONS_PER_BLOCK > trxs_pool.len() {
             trxs_pool.len()
         } else {
             MAX_TRANSACTIONS_PER_BLOCK
         };
 
-        let mut to_return: Vec<TransactionableItem> = Vec::with_capacity(transactions_amount);
-
-        let mut counter = 0;
-
-        while counter < transactions_amount {
-            if let Some(tr) = self.trxs_pool.write().await.pop() {
-                to_return.push(tr);
-            } else {
-                break;
-            }
-
-            counter += 1;
+        // get transactions
+        let mut transactions: Vec<Box<dyn Transactionable + Send + Sync>> = Vec::new();
+        if self.get_funds(&ROOT_PUBLIC_ADDRESS)? >= MAIN_CHAIN_PAYMENT.clone() {
+            // if there is enough coins left in the root address make payment transaction
+            transactions.push(Box::new(Transaction::new(
+                ROOT_PUBLIC_ADDRESS,
+                addr,
+                timestamp,
+                MAIN_CHAIN_PAYMENT.clone(),
+                ROOT_PRIVATE_ADDRESS,
+            )));
         }
-        Some(to_return)
+        transactions.extend(
+            (0..transactions_amount).map(|_| unsafe { trxs_pool.pop().unwrap_unchecked() }),
+        );
+
+        // get hashes & remove transaction references
+        let mut trxs_hashes = self.trxs_hashes.write().await;
+        let transactions_hashes: Vec<_> = transactions
+            .iter()
+            .map(|trx| {
+                let hash = trx.hash();
+                trxs_hashes.remove(&hash);
+                hash
+            })
+            .collect();
+        drop(trxs_hashes);
+
+        // build merkle tree & get root
+        let mut merkle_tree = MerkleTree::new();
+        merkle_tree.add_objects(&transactions_hashes);
+        let merkle_tree_root = *merkle_tree.get_root();
+
+        let fee = self.main_chain.calculate_fee().await;
+
+        let basic_info = BasicInfo::new(
+            timestamp,
+            pow,
+            last_hash,
+            self.main_chain.get_height().await,
+            difficulty,
+        );
+
+        todo!()
     }
 
+    pub async fn emit_main_chain_block(
+        &self,
+        pow: BigUint,
+        addr: [u8; 33],
+    ) -> Result<Box<dyn MainChainBlock>, BlockChainTreeError> {
+        todo!()
+    }
     // pub fn get_pool(&mut self) -> &VecDeque<Box<dyn Transactionable>> {
     //     &self.trxs_pool
     // }
