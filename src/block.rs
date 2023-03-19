@@ -25,30 +25,25 @@ static ALREADY_SET: &str = "data is already set";
 
 #[derive(Debug, Clone)]
 pub struct BasicInfo {
-    timestamp: u64,
-    pow: BigUint,
-    previous_hash: [u8; 32],
-    //current_hash: [u8; 32],
-    height: u64,
-    difficulty: [u8; 32],
+    pub timestamp: u64,
+    pub pow: BigUint,
+    pub previous_hash: [u8; 32],
+    pub height: u64,
+    pub difficulty: [u8; 32],
 }
 
 impl BasicInfo {
     pub fn new(
-        //miner:[u8;33],
         timestamp: u64,
         pow: BigUint,
         previous_hash: [u8; 32],
-        //current_hash: [u8; 32],
         height: u64,
         difficulty: [u8; 32],
     ) -> BasicInfo {
         BasicInfo {
-            //miner:miner,
             timestamp,
             pow,
             previous_hash,
-            //current_hash,
             height,
             difficulty,
         }
