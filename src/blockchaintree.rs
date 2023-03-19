@@ -389,7 +389,7 @@ impl Chain {
     pub async fn find_by_height(
         &self,
         height: u64,
-    ) -> Result<Option<Box<dyn MainChainBlock>>, BlockChainTreeError> {
+    ) -> Result<Option<Box<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
         let chain_height = self.height.read().await;
         if height > *chain_height {
             return Ok(None);
@@ -429,7 +429,7 @@ impl Chain {
     pub async fn find_by_hash(
         &self,
         hash: &[u8; 32],
-    ) -> Result<Option<Box<dyn MainChainBlock>>, BlockChainTreeError> {
+    ) -> Result<Option<Box<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
         let height = match self
             .height_reference
             .get(hash)
@@ -541,7 +541,7 @@ impl Chain {
     /// Get deserialized last block of the chain
     pub async fn get_last_block(
         &self,
-    ) -> Result<Option<Box<dyn MainChainBlock>>, BlockChainTreeError> {
+    ) -> Result<Option<Box<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
         let height = self.height.read().await;
         let last_block_index = *height - 1;
         drop(height);
@@ -1797,9 +1797,9 @@ impl BlockChainTree {
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
-    ) -> Result<Box<dyn MainChainBlock>, BlockChainTreeError> {
+    ) -> Result<Box<dyn MainChainBlock + Send + Sync>, BlockChainTreeError> {
         let difficulty = self.main_chain.get_locked_difficulty().await;
-        if self.main_chain.get_height().await as usize == BLOCKS_PER_ITERATION {
+        if self.main_chain.get_height().await as usize % BLOCKS_PER_ITERATION == 0 {
             // new cycle
             let block = self
                 .emit_summarize_block(pow, addr, timestamp, *difficulty)
