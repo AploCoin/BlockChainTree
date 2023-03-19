@@ -19,7 +19,7 @@ use std::io::Write;
 use std::path::Path;
 use std::str::{self};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, RwLockWriteGuard};
 
 use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
@@ -240,6 +240,41 @@ impl Chain {
         Ok(())
     }
 
+    /// Add a batch of transactions
+    pub async fn add_transactions_raw(
+        &self,
+        transactions: Vec<Box<dyn Transactionable + Send + Sync>>,
+    ) -> Result<(), BlockChainTreeError> {
+        let mut batch = sled::Batch::default();
+        for transaction in transactions {
+            batch.insert(
+                &transaction.hash(),
+                transaction
+                    .dump()
+                    .change_context(BlockChainTreeError::Chain(
+                        ChainErrorKind::AddingTransaction,
+                    ))?,
+            );
+        }
+
+        self.transactions
+            .apply_batch(batch)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))?;
+
+        self.transactions
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))?;
+
+        Ok(())
+    }
+
     /// Get deserialized transaction by it's hash
     pub async fn find_transaction(
         &self,
@@ -288,9 +323,17 @@ impl Chain {
         *self.height.read().await
     }
 
+    pub async fn get_locked_height(&self) -> RwLockWriteGuard<u64> {
+        self.height.write().await
+    }
+
     /// Get current chain's difficulty
     pub async fn get_difficulty(&self) -> [u8; 32] {
         *self.difficulty.read().await
+    }
+
+    pub async fn get_locked_difficulty(&self) -> RwLockWriteGuard<[u8; 32]> {
+        self.difficulty.write().await
     }
 
     /// Get serialized block by it's height
@@ -1500,13 +1543,13 @@ impl BlockChainTree {
 
     /// Move current summary database to old database
     ///
-    /// Removes old summary database and places current summary db on it's place, creates fresh summary db
-    pub fn move_summary_database(&mut self) -> Result<(), BlockChainTreeError> {
+    /// Removes old summary database and places current summary db on it's place
+    pub fn move_summary_database(&self) -> Result<(Db, Db), BlockChainTreeError> {
         let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
         let sum_path = Path::new(AMMOUNT_SUMMARY);
 
-        self.old_summary_db = Arc::new(None);
-        self.summary_db = Arc::new(None);
+        //self.old_summary_db = Arc::new(None);
+        //self.summary_db = Arc::new(None);
 
         fs::remove_dir_all(old_sum_path)
             .into_report()
@@ -1515,39 +1558,39 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to remove previous database")?;
 
-        fs::rename(sum_path, old_sum_path)
-            .into_report()
-            .change_context(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::MoveSummaryDB,
-            ))
-            .attach_printable("failed to rename folder for summary db")?;
-
-        fs::create_dir(sum_path)
+        fs::create_dir(old_sum_path)
             .into_report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to create folder for an old summarize db")?;
 
-        let result = sled::open(sum_path)
+        tools::copy_dir_all(sum_path, old_sum_path)
+            .into_report()
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to copy current db into old db")?;
+
+        let summary_db = sled::open(sum_path)
             .into_report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to open summary db")?;
 
-        self.summary_db = Arc::new(Some(result));
+        //self.summary_db = Arc::new(Some(result));
 
-        let result = sled::open(old_sum_path)
+        let old_summary_db = sled::open(old_sum_path)
             .into_report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to open old summary db")?;
 
-        self.old_summary_db = Arc::new(Some(result));
+        //self.old_summary_db = Arc::new(Some(result));
 
-        Ok(())
+        Ok((summary_db, old_summary_db))
     }
 
     /// Check whether transaction with same hash exists
@@ -1615,19 +1658,23 @@ impl BlockChainTree {
         Ok(())
     }
 
+    /// Create transaction block
+    ///
+    /// This function validates pow, pops transactions from trxs_pool, then
+    ///
+    /// adds new transactions block and poped transactions to the main chain
     async fn emit_transaction_block(
         &self,
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
+        difficulty: [u8; 32],
     ) -> Result<TransactionBlock, BlockChainTreeError> {
         let mut trxs_pool = self.trxs_pool.write().await;
 
         let last_hash = self.main_chain.get_last_hash().await.change_context(
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
-
-        let difficulty = self.main_chain.get_difficulty().await;
 
         if !tools::check_pow(last_hash, difficulty, &pow) {
             // if pow is bad
@@ -1687,17 +1734,87 @@ impl BlockChainTree {
             difficulty,
         );
 
-        todo!()
+        // add block to the main chain
+        let block = TransactionBlock::new(transactions_hashes, fee, basic_info, merkle_tree_root);
+        self.main_chain.add_block_raw(&block).await?;
+
+        // add transactions to the main chain
+        self.main_chain.add_transactions_raw(transactions).await?;
+
+        Ok(block)
     }
 
-    pub async fn emit_main_chain_block(
+    async fn emit_summarize_block(
         &self,
         pow: BigUint,
         addr: [u8; 33],
-    ) -> Result<Box<dyn MainChainBlock>, BlockChainTreeError> {
-        todo!()
+        timestamp: u64,
+        difficulty: [u8; 32],
+    ) -> Result<SummarizeBlock, BlockChainTreeError> {
+        let last_hash = self.main_chain.get_last_hash().await.change_context(
+            BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
+        )?;
+
+        if !tools::check_pow(last_hash, difficulty, &pow) {
+            // if pow is bad
+            return Err(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::WrongPow,
+            ))
+            .into_report();
+        }
+
+        let fee = self.main_chain.calculate_fee().await;
+
+        let basic_info = BasicInfo::new(
+            timestamp,
+            pow,
+            last_hash,
+            self.main_chain.get_height().await,
+            difficulty,
+        );
+
+        let founder_transaction = Transaction::new(
+            ROOT_PUBLIC_ADDRESS,
+            addr,
+            timestamp,
+            MAIN_CHAIN_PAYMENT.clone(),
+            ROOT_PRIVATE_ADDRESS,
+        );
+        // TODO: add funds
+
+        let block = SummarizeBlock::new(basic_info, founder_transaction.hash());
+
+        self.main_chain.add_block_raw(&block).await?;
+        self.main_chain
+            .add_transaction_raw(founder_transaction)
+            .await?;
+
+        Ok(block)
     }
-    // pub fn get_pool(&mut self) -> &VecDeque<Box<dyn Transactionable>> {
-    //     &self.trxs_pool
-    // }
+
+    pub async fn emit_main_chain_block(
+        &mut self,
+        pow: BigUint,
+        addr: [u8; 33],
+        timestamp: u64,
+    ) -> Result<Box<dyn MainChainBlock>, BlockChainTreeError> {
+        let difficulty = self.main_chain.get_locked_difficulty().await;
+        if self.main_chain.get_height().await as usize == BLOCKS_PER_ITERATION {
+            // new cycle
+            let block = self
+                .emit_summarize_block(pow, addr, timestamp, *difficulty)
+                .await?;
+
+            let (summary_db, old_summary_db) = self.move_summary_database()?;
+            self.summary_db = Arc::new(Some(summary_db));
+            self.old_summary_db = Arc::new(Some(old_summary_db));
+            Ok(Box::new(block))
+        } else {
+            let block = self
+                .emit_transaction_block(pow, addr, timestamp, *difficulty)
+                .await?;
+
+            Ok(Box::new(block))
+        }
+    }
 }
