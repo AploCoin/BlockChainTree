@@ -1544,12 +1544,12 @@ impl BlockChainTree {
     /// Move current summary database to old database
     ///
     /// Removes old summary database and places current summary db on it's place
-    pub fn move_summary_database(&mut self) -> Result<(), BlockChainTreeError> {
+    pub fn move_summary_database(&self) -> Result<(Db, Db), BlockChainTreeError> {
         let old_sum_path = Path::new(OLD_AMMOUNT_SUMMARY);
         let sum_path = Path::new(AMMOUNT_SUMMARY);
 
-        self.old_summary_db = Arc::new(None);
-        self.summary_db = Arc::new(None);
+        //self.old_summary_db = Arc::new(None);
+        //self.summary_db = Arc::new(None);
 
         fs::remove_dir_all(old_sum_path)
             .into_report()
@@ -1572,25 +1572,25 @@ impl BlockChainTree {
             ))
             .attach_printable("failed to copy current db into old db")?;
 
-        let result = sled::open(sum_path)
+        let summary_db = sled::open(sum_path)
             .into_report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to open summary db")?;
 
-        self.summary_db = Arc::new(Some(result));
+        //self.summary_db = Arc::new(Some(result));
 
-        let result = sled::open(old_sum_path)
+        let old_summary_db = sled::open(old_sum_path)
             .into_report()
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to open old summary db")?;
 
-        self.old_summary_db = Arc::new(Some(result));
+        //self.old_summary_db = Arc::new(Some(result));
 
-        Ok(())
+        Ok((summary_db, old_summary_db))
     }
 
     /// Check whether transaction with same hash exists
@@ -1805,7 +1805,9 @@ impl BlockChainTree {
                 .emit_summarize_block(pow, addr, timestamp, *difficulty)
                 .await?;
 
-            //self.move_summary_database()?;
+            let (summary_db, old_summary_db) = self.move_summary_database()?;
+            self.summary_db = Arc::new(Some(summary_db));
+            self.old_summary_db = Arc::new(Some(old_summary_db));
             Ok(Box::new(block))
         } else {
             let block = self
