@@ -422,6 +422,12 @@ impl MainChainBlock for TransactionBlock {
     fn dump(&self) -> Result<Vec<u8>, BlockError> {
         self.dump()
     }
+    fn get_info(&self) -> BasicInfo {
+        self.default_info.clone()
+    }
+    fn get_merkle_root(&self) -> [u8; 32] {
+        self.merkle_tree_root
+    }
 }
 
 pub struct TokenBlock {
@@ -621,10 +627,18 @@ impl MainChainBlock for SummarizeBlock {
     fn dump(&self) -> Result<Vec<u8>, BlockError> {
         self.dump()
     }
+    fn get_info(&self) -> BasicInfo {
+        self.default_info.clone()
+    }
+    fn get_merkle_root(&self) -> [u8; 32] {
+        self.founder_transaction
+    }
 }
 
 pub trait MainChainBlock {
     fn hash(&self) -> Result<[u8; 32], BlockError>;
     fn get_dump_size(&self) -> usize;
     fn dump(&self) -> Result<Vec<u8>, BlockError>;
+    fn get_info(&self) -> BasicInfo;
+    fn get_merkle_root(&self) -> [u8; 32];
 }
