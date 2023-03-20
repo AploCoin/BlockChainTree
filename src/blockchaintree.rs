@@ -1794,7 +1794,7 @@ impl BlockChainTree {
     ///
     /// returns emmited block
     pub async fn emit_main_chain_block(
-        &mut self,
+        &self,
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
@@ -1806,9 +1806,14 @@ impl BlockChainTree {
                 .emit_summarize_block(pow, addr, timestamp, *difficulty)
                 .await?;
 
+            let mut summary_db_lock = self.summary_db.write().await;
+            let mut old_summary_db_lock = self.old_summary_db.write().await;
+
             let (summary_db, old_summary_db) = self.move_summary_database()?;
-            *self.summary_db.write().await = summary_db;
-            *self.old_summary_db.write().await = old_summary_db;
+
+            *summary_db_lock = summary_db;
+            *old_summary_db_lock = old_summary_db;
+
             Ok(Box::new(block))
         } else {
             let block = self
