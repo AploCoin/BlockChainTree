@@ -1636,13 +1636,13 @@ impl BlockChainTree {
             && self.main_chain.get_height().await as usize + 1 % BLOCKS_PER_ITERATION != 0
         {
             let amount = tr.get_amount();
-            self.decrease_funds(tr.get_sender(), &amount)
+            self.decrease_funds(tr.get_sender(), amount)
                 .await
                 .change_context(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::NewTransaction,
                 ))?;
 
-            self.add_funds(tr.get_sender(), &amount)
+            self.add_funds(tr.get_sender(), amount)
                 .await
                 .change_context(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::NewTransaction,
