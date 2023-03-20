@@ -907,8 +907,8 @@ impl DerivativeChain {
 pub struct BlockChainTree {
     trxs_pool: TrxsPool,
     trxs_hashes: Arc<RwLock<HashSet<[u8; 32]>>>,
-    summary_db: Arc<Option<Db>>,
-    old_summary_db: Arc<Option<Db>>,
+    summary_db: Arc<RwLock<Db>>,
+    old_summary_db: Arc<RwLock<Db>>,
     main_chain: Arc<Chain>,
     deratives: Derivatives,
 }
@@ -995,9 +995,9 @@ impl BlockChainTree {
 
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
-            summary_db: Arc::new(Some(summary_db)),
+            summary_db: Arc::new(RwLock::new(summary_db)),
             main_chain: Arc::new(main_chain),
-            old_summary_db: Arc::new(Some(old_summary_db)),
+            old_summary_db: Arc::new(RwLock::new(old_summary_db)),
             deratives: Arc::default(),
             trxs_hashes: Arc::default(),
         })
@@ -1073,9 +1073,9 @@ impl BlockChainTree {
 
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
-            summary_db: Arc::new(Some(summary_db)),
+            summary_db: Arc::new(RwLock::new(summary_db)),
             main_chain: Arc::new(main_chain),
-            old_summary_db: Arc::new(Some(old_summary_db)),
+            old_summary_db: Arc::new(RwLock::new(old_summary_db)),
             deratives: Arc::default(),
             trxs_hashes: Arc::default(),
         })
@@ -1339,7 +1339,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        let result = self.summary_db.as_ref().as_ref().unwrap().get(addr);
+        let result = self.summary_db.as_ref().read().await.get(addr);
         match result {
             Ok(None) => {
                 let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(funds));
@@ -1347,8 +1347,7 @@ impl BlockChainTree {
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
                 )?;
 
-                let mut db_ref = Option::as_ref(&self.summary_db);
-                let db = db_ref.as_mut().unwrap();
+                let db = self.summary_db.read().await;
 
                 db.insert(addr, dump)
                     .into_report()
@@ -1386,8 +1385,7 @@ impl BlockChainTree {
                     BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
                 )?;
 
-                let mut db_ref = Option::as_ref(&self.summary_db);
-                let db = db_ref.as_mut().unwrap();
+                let db = self.summary_db.read().await;
 
                 db.insert(addr, dump)
                     .into_report()
@@ -1430,8 +1428,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        let mut db_ref = Option::as_ref(&self.summary_db);
-        let db = db_ref.as_mut().unwrap();
+        let db = self.summary_db.read().await;
 
         let result = db.get(addr);
         match result {
@@ -1497,8 +1494,8 @@ impl BlockChainTree {
     /// Get funds
     ///
     /// Gets funds for specified address from summary db
-    pub fn get_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        match Option::as_ref(&self.summary_db).as_ref().unwrap().get(addr) {
+    pub async fn get_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
+        match self.summary_db.read().await.get(addr) {
             Ok(None) => Ok(Zero::zero()),
             Ok(Some(prev)) => {
                 let res = tools::load_biguint(&prev).change_context(
@@ -1521,12 +1518,8 @@ impl BlockChainTree {
     /// Get old funds
     ///
     /// Gets old funds for specified address from previous summary db
-    pub fn get_old_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        match Option::as_ref(&self.old_summary_db)
-            .as_ref()
-            .unwrap()
-            .get(addr)
-        {
+    pub async fn get_old_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
+        match self.old_summary_db.read().await.get(addr) {
             Ok(None) => Ok(Zero::zero()),
             Ok(Some(prev)) => {
                 let res = tools::load_biguint(&prev).change_context(
@@ -1642,13 +1635,14 @@ impl BlockChainTree {
         if trxs_pool_len < MAX_TRANSACTIONS_PER_BLOCK
             && self.main_chain.get_height().await as usize + 1 % BLOCKS_PER_ITERATION != 0
         {
-            self.decrease_funds(tr.get_sender(), tr.get_amount())
+            let amount = tr.get_amount();
+            self.decrease_funds(tr.get_sender(), amount)
                 .await
                 .change_context(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::NewTransaction,
                 ))?;
 
-            self.add_funds(tr.get_sender(), tr.get_amount())
+            self.add_funds(tr.get_sender(), amount)
                 .await
                 .change_context(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::NewTransaction,
@@ -1693,7 +1687,7 @@ impl BlockChainTree {
 
         // get transactions
         let mut transactions: Vec<Box<dyn Transactionable + Send + Sync>> = Vec::new();
-        if self.get_funds(&ROOT_PUBLIC_ADDRESS)? >= MAIN_CHAIN_PAYMENT.clone() {
+        if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= MAIN_CHAIN_PAYMENT.clone() {
             // if there is enough coins left in the root address make payment transaction
             transactions.push(Box::new(Transaction::new(
                 ROOT_PUBLIC_ADDRESS,
@@ -1792,8 +1786,15 @@ impl BlockChainTree {
         Ok(block)
     }
 
+    /// Create main chain block and add it to the main chain
+    ///
+    /// Verifies POW and creates new main chain block
+    ///
+    /// Does not verify timestamp
+    ///
+    /// returns emmited block
     pub async fn emit_main_chain_block(
-        &mut self,
+        &self,
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
@@ -1805,9 +1806,14 @@ impl BlockChainTree {
                 .emit_summarize_block(pow, addr, timestamp, *difficulty)
                 .await?;
 
+            let mut summary_db_lock = self.summary_db.write().await;
+            let mut old_summary_db_lock = self.old_summary_db.write().await;
+
             let (summary_db, old_summary_db) = self.move_summary_database()?;
-            self.summary_db = Arc::new(Some(summary_db));
-            self.old_summary_db = Arc::new(Some(old_summary_db));
+
+            *summary_db_lock = summary_db;
+            *old_summary_db_lock = old_summary_db;
+
             Ok(Box::new(block))
         } else {
             let block = self
