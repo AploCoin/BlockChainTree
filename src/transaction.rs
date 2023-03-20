@@ -52,6 +52,7 @@ pub trait Transactionable: Send + Sync {
     fn get_receiver(&self) -> &[u8; 33];
     fn get_timestamp(&self) -> u64;
     fn get_signature(&self) -> &[u8; 64];
+    fn get_amount(&self) -> Option<BigUint>;
 }
 
 #[derive(Debug, Clone)]
@@ -341,5 +342,8 @@ impl Transactionable for Transaction {
 
     fn get_signature(&self) -> &[u8; 64] {
         &self.signature
+    }
+    fn get_amount(&self) -> Option<BigUint> {
+        Some(self.amount.clone())
     }
 }
