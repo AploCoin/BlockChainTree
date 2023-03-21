@@ -50,7 +50,7 @@ impl BasicInfo {
     }
 
     pub fn get_dump_size(&self) -> usize {
-        8 + tools::bigint_size(&self.pow) + 32 + 32 + 8 + 32
+        8 + tools::bigint_size(&self.pow) + 32 + 32 + 8
     }
     pub fn dump(&self, buffer: &mut Vec<u8>) -> Result<(), BlockError> {
         // dumping timestamp
@@ -62,11 +62,6 @@ impl BasicInfo {
         for byte in self.previous_hash.iter() {
             buffer.push(*byte);
         }
-
-        // // dumping current hash
-        // for byte in self.current_hash.iter() {
-        //     buffer.push(*byte);
-        // }
 
         // dumping height
         for byte in self.height.to_be_bytes().iter() {
@@ -101,11 +96,6 @@ impl BasicInfo {
         let previous_hash: [u8; 32] =
             unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
-
-        // // parsing current hash
-        // let current_hash: [u8; 32] =
-        //     unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
-        // index += 32;
 
         // parsing height
         let height: u64 = bytes_to_u64!(data, index);
@@ -263,7 +253,7 @@ impl TransactionBlock {
         to_return.push(Headers::TransactionBlock as u8);
 
         // merkle tree root
-        to_return.extend(self.merkle_tree_root.iter());
+        to_return.extend(self.merkle_tree_root);
 
         // default info
         self.default_info

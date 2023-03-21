@@ -589,12 +589,12 @@ impl Chain {
         Ok(tools::check_pow(last_hash, difficulty, &pow))
     }
 
-    /// Calculate fee for the current difficulty
+    /// Calculate fee for the difficulty
     ///
-    /// takes current difficulty and calculates fee for it
-    pub async fn calculate_fee(&self) -> BigUint {
+    /// takes difficulty and calculates fee for it
+    pub fn calculate_fee(difficulty: &[u8; 32]) -> BigUint {
         let mut leading_zeroes = 0;
-        for byte in self.get_difficulty().await {
+        for byte in difficulty {
             let bytes_leading_zeroes = byte.leading_zeros() as usize;
             leading_zeroes += bytes_leading_zeroes;
             if bytes_leading_zeroes < 8 {
@@ -1463,10 +1463,7 @@ impl BlockChainTree {
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::DecreaseFunds,
                     ))
-                    .attach_printable(format!(
-                        "failed to put funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
+                    .attach_printable(format!("failed to put funds at address: {:X?}", addr))?;
 
                 db.flush_async()
                     .await
@@ -1475,8 +1472,8 @@ impl BlockChainTree {
                         BCTreeErrorKind::AddFunds,
                     ))
                     .attach_printable(format!(
-                        "failed to create and add funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
+                        "failed to create and add funds at address: {:X?}",
+                        addr
                     ))?;
 
                 Ok(())
@@ -1696,6 +1693,10 @@ impl BlockChainTree {
                 MAIN_CHAIN_PAYMENT.clone(),
                 ROOT_PRIVATE_ADDRESS,
             )));
+
+            self.add_funds(&addr, &MAIN_CHAIN_PAYMENT).await?;
+            self.decrease_funds(&ROOT_PUBLIC_ADDRESS, &MAIN_CHAIN_PAYMENT)
+                .await?;
         }
         transactions.extend(
             (0..transactions_amount).map(|_| unsafe { trxs_pool.pop().unwrap_unchecked() }),
@@ -1718,7 +1719,7 @@ impl BlockChainTree {
         merkle_tree.add_objects(&transactions_hashes);
         let merkle_tree_root = *merkle_tree.get_root();
 
-        let fee = self.main_chain.calculate_fee().await;
+        let fee = Chain::calculate_fee(&difficulty);
 
         let basic_info = BasicInfo::new(
             timestamp,
@@ -1757,7 +1758,7 @@ impl BlockChainTree {
             .into_report();
         }
 
-        let fee = self.main_chain.calculate_fee().await;
+        let fee = Chain::calculate_fee(&difficulty);
 
         let basic_info = BasicInfo::new(
             timestamp,
@@ -1774,7 +1775,8 @@ impl BlockChainTree {
             MAIN_CHAIN_PAYMENT.clone(),
             ROOT_PRIVATE_ADDRESS,
         );
-        // TODO: add funds
+
+        self.add_funds(&addr, &MAIN_CHAIN_PAYMENT).await?;
 
         let block = SummarizeBlock::new(basic_info, founder_transaction.hash());
 
@@ -1800,7 +1802,8 @@ impl BlockChainTree {
         timestamp: u64,
     ) -> Result<Box<dyn MainChainBlock + Send + Sync>, BlockChainTreeError> {
         let difficulty = self.main_chain.get_locked_difficulty().await;
-        if self.main_chain.get_height().await as usize % BLOCKS_PER_ITERATION == 0 {
+        let height = self.main_chain.get_height().await as usize;
+        if height % BLOCKS_PER_ITERATION == 0 && height > 0 {
             // new cycle
             let block = self
                 .emit_summarize_block(pow, addr, timestamp, *difficulty)
