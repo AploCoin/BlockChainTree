@@ -61,6 +61,9 @@ pub fn load_biguint(data: &[u8]) -> Result<(BigUint, usize), ToolsError> {
 
 pub fn bigint_size(number: &BigUint) -> usize {
     let bits_size: usize = number.bits() as usize;
+    if bits_size == 0 {
+        return 2;
+    }
     let mut amount_byte_size: usize = bits_size / 8;
     if number.bits() % 8 != 0 {
         amount_byte_size += 1;
