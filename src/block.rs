@@ -21,8 +21,6 @@ macro_rules! bytes_to_u64 {
     };
 }
 
-static ALREADY_SET: &str = "data is already set";
-
 #[derive(Debug, Clone)]
 pub struct BasicInfo {
     pub timestamp: u64,
@@ -272,7 +270,7 @@ impl TransactionBlock {
         Ok(to_return)
     }
 
-    pub fn parse(data: &[u8], block_size: u32) -> Result<TransactionBlock, BlockError> {
+    pub fn parse(data: &[u8]) -> Result<TransactionBlock, BlockError> {
         let mut offset: usize = 0;
 
         // merkle tree root

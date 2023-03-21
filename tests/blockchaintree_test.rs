@@ -156,7 +156,7 @@ fn transaction_block_test() {
 
     let dump = block.dump().unwrap();
 
-    let loaded_block = TransactionBlock::parse(&dump[1..], (dump.len() - 1) as u32).unwrap();
+    let loaded_block = TransactionBlock::parse(&dump[1..]).unwrap();
 
     assert_eq!(block.hash().unwrap(), loaded_block.hash().unwrap());
 }

@@ -408,7 +408,7 @@ impl Chain {
         let dump = dump.unwrap();
 
         if dump[0] == Headers::TransactionBlock as u8 {
-            let block = TransactionBlock::parse(&dump[1..], (dump.len() - 1) as u32)
+            let block = TransactionBlock::parse(&dump[1..])
                 .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
             return Ok(Some(Box::new(block)));
@@ -561,7 +561,7 @@ impl Chain {
             .last()
             .into_report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?
-            .map(|(hash, height)| {
+            .map(|(hash, _)| {
                 let mut hash_arr = [0u8; 32];
                 hash.iter()
                     .zip(hash_arr.iter_mut())
@@ -1758,7 +1758,7 @@ impl BlockChainTree {
             .into_report();
         }
 
-        let fee = Chain::calculate_fee(&difficulty);
+        //let fee = Chain::calculate_fee(&difficulty);
 
         let basic_info = BasicInfo::new(
             timestamp,

@@ -1,5 +1,4 @@
 #![allow(dead_code)]
-#![allow(unused_variables)]
 pub mod block;
 pub mod blockchaintree;
 pub mod dump_headers;
