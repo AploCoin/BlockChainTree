@@ -19,13 +19,22 @@ impl Eq for TransactionableItem {}
 
 impl Ord for TransactionableItem {
     fn cmp(&self, other: &Self) -> Ordering {
-        self.get_timestamp().cmp(&other.get_timestamp())
+        match self.get_timestamp().cmp(&other.get_timestamp()) {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
+            Ordering::Greater => Ordering::Less,
+        }
     }
 }
 
 impl PartialOrd for TransactionableItem {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.get_timestamp().cmp(&other.get_timestamp()))
+        Some(match self.get_timestamp().cmp(&other.get_timestamp()) {
+            Ordering::Less => Ordering::Greater,
+            Ordering::Equal => Ordering::Equal,
+            Ordering::Greater => Ordering::Less,
+        })
+        //Some(self.get_timestamp().cmp(&other.get_timestamp()))
     }
 }
 

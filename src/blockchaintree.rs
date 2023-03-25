@@ -4,6 +4,7 @@ use crate::merkletree::MerkleTree;
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
+use std::collections::binary_heap::Iter;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryInto;
 
@@ -45,12 +46,15 @@ static TRANSACTIONS_POOL: &str = "TRXS_POOL.pool";
 static GENESIS_BLOCK: [u8; 32] = [
     0x77, 0xe6, 0xd9, 0x52, 0x67, 0x57, 0x8e, 0x85, 0x39, 0xa9, 0xcf, 0xe0, 0x03, 0xf4, 0xf7, 0xfe,
     0x7d, 0x6a, 0x29, 0x0d, 0xaf, 0xa7, 0x73, 0xa6, 0x5c, 0x0f, 0x01, 0x9d, 0x5c, 0xbc, 0x0a, 0x7c,
-];
+]; // God is dead, noone will stop anarchy
 static BEGINNING_DIFFICULTY: [u8; 32] = [
     0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 ];
-// God is dead, noone will stop anarchy
+static MAX_DIFFICULTY: [u8; 32] = [
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+];
 
 pub static ROOT_PRIVATE_ADDRESS: [u8; 32] = [1u8; 32];
 pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
@@ -70,10 +74,55 @@ lazy_static! {
 static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
-type TrxsPool = Arc<RwLock<BinaryHeap<TransactionableItem>>>;
+type TrxsPool = BinaryHeap<TransactionableItem>;
 
 type DerivativesCell = Arc<RwLock<DerivativeChain>>;
 type Derivatives = Arc<RwLock<HashMap<[u8; 33], DerivativesCell>>>;
+
+#[derive(Default)]
+pub struct TransactionsPool {
+    pool: TrxsPool,
+    hashes: HashSet<[u8; 32]>,
+}
+
+impl TransactionsPool {
+    pub fn new() -> TransactionsPool {
+        TransactionsPool::default()
+    }
+    pub fn with_capacity(capacity: usize) -> TransactionsPool {
+        TransactionsPool {
+            pool: BinaryHeap::with_capacity(capacity),
+            hashes: HashSet::with_capacity(capacity),
+        }
+    }
+
+    pub fn push(&mut self, transaction: TransactionableItem) -> bool {
+        if !self.hashes.insert(transaction.hash()) {
+            return false;
+        }
+        self.pool.push(transaction);
+        true
+    }
+
+    pub fn len(&self) -> usize {
+        self.hashes.len()
+    }
+
+    pub fn transactions_iter(&self) -> Iter<'_, TransactionableItem> {
+        self.pool.iter()
+    }
+
+    pub fn pop(&mut self) -> Option<([u8; 32], TransactionableItem)> {
+        let tr = self.pool.pop()?;
+        let hash = tr.hash();
+        self.hashes.remove(&hash);
+        Some((hash, tr))
+    }
+
+    pub fn transaction_exists(&self, hash: &[u8; 32]) -> bool {
+        self.hashes.contains(hash)
+    }
+}
 
 #[derive(Clone)]
 pub struct Chain {
@@ -905,8 +954,8 @@ impl DerivativeChain {
 
 #[derive(Clone)]
 pub struct BlockChainTree {
-    trxs_pool: TrxsPool,
-    trxs_hashes: Arc<RwLock<HashSet<[u8; 32]>>>,
+    trxs_pool: Arc<RwLock<TransactionsPool>>,
+    //trxs_hashes: Arc<RwLock<HashSet<[u8; 32]>>>,
     summary_db: Arc<RwLock<Db>>,
     old_summary_db: Arc<RwLock<Db>>,
     main_chain: Arc<Chain>,
@@ -955,7 +1004,7 @@ impl BlockChainTree {
         let mut buf: [u8; 4] = [0; 4];
 
         // allocate VecDeque
-        let mut trxs_pool = BinaryHeap::<TransactionableItem>::with_capacity(trxs_amount as usize);
+        let mut trxs_pool = TransactionsPool::with_capacity(trxs_amount as usize);
 
         // parsing transactions
         for _ in 0..trxs_amount {
@@ -999,7 +1048,6 @@ impl BlockChainTree {
             main_chain: Arc::new(main_chain),
             old_summary_db: Arc::new(RwLock::new(old_summary_db)),
             deratives: Arc::default(),
-            trxs_hashes: Arc::default(),
         })
     }
 
@@ -1055,7 +1103,7 @@ impl BlockChainTree {
             .attach_printable("failed to open old summary db")?;
 
         // allocate VecDeque
-        let trxs_pool = BinaryHeap::<TransactionableItem>::new();
+        let trxs_pool = TransactionsPool::new();
 
         // opening main chain
         let main_chain = Chain::new_without_config(MAIN_CHAIN_DIRECTORY, &GENESIS_BLOCK)
@@ -1077,7 +1125,6 @@ impl BlockChainTree {
             main_chain: Arc::new(main_chain),
             old_summary_db: Arc::new(RwLock::new(old_summary_db)),
             deratives: Arc::default(),
-            trxs_hashes: Arc::default(),
         })
     }
 
@@ -1107,7 +1154,7 @@ impl BlockChainTree {
             .attach_printable("failed to write amount of transactions")?;
 
         //write transactions
-        for transaction in trxs_pool.iter() {
+        for transaction in trxs_pool.transactions_iter() {
             // get dump
             let dump = transaction
                 .dump()
@@ -1583,11 +1630,14 @@ impl BlockChainTree {
         Ok((summary_db, old_summary_db))
     }
 
-    /// Check whether transaction with same hash exists
-    ///
-    /// first check in trxs_hashes then in main chain references
+    // Check whether transaction with same hash exists
+    //
+    // First check in trxs_hashes then in main chain references
+    //
+    // Blocks trxs pool for reading for the whole duration of the function
     pub async fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
-        if self.trxs_hashes.read().await.get(hash).is_some() {
+        let trxs_pool = self.trxs_pool.read().await;
+        if trxs_pool.transaction_exists(hash) {
             return Ok(true);
         }
 
@@ -1613,38 +1663,50 @@ impl BlockChainTree {
     ///
     /// If transaction with same hash exists will return error
     pub async fn new_transaction(&self, tr: Transaction) -> Result<(), BlockChainTreeError> {
-        if self.transaction_exists(&tr.hash()).await? {
+        let mut trxs_pool = self.trxs_pool.write().await;
+
+        let tr_hash = tr.hash();
+        if trxs_pool.transaction_exists(&tr_hash)
+            || self
+                .get_main_chain()
+                .transaction_exists(&tr_hash)
+                .await
+                .change_context(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::NewTransaction,
+                ))?
+        {
             return Err(Report::new(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))
             .attach_printable("Transaction with same hash found"));
         }
 
-        let trxs_pool_len = self.trxs_pool.read().await.len() + 1;
-        self.trxs_pool.write().await.push(Box::new(tr.clone()));
+        let difficulty = self.main_chain.difficulty.read().await;
+        let fee = Chain::calculate_fee(&difficulty);
+        drop(difficulty);
 
-        self.trxs_hashes.write().await.insert(tr.hash());
+        let amount = tr.get_amount();
 
-        // if it is in first bunch of transactions
-        // to be added to blockchain.
-        // AND if it is not a last block
-        // that is pending.
-        if trxs_pool_len < MAX_TRANSACTIONS_PER_BLOCK
-            && self.main_chain.get_height().await as usize + 1 % BLOCKS_PER_ITERATION != 0
-        {
-            let amount = tr.get_amount();
-            self.decrease_funds(tr.get_sender(), amount)
-                .await
-                .change_context(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::NewTransaction,
-                ))?;
-
-            self.add_funds(tr.get_sender(), amount)
-                .await
-                .change_context(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::NewTransaction,
-                ))?;
+        if amount <= &fee {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Amount sent in transaction is smaller, than the fee"));
         }
+
+        trxs_pool.push(Box::new(tr.clone()));
+
+        self.decrease_funds(tr.get_sender(), amount)
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?;
+
+        self.add_funds(tr.get_sender(), amount)
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?;
 
         Ok(())
     }
@@ -1684,6 +1746,7 @@ impl BlockChainTree {
 
         // get transactions
         let mut transactions: Vec<Box<dyn Transactionable + Send + Sync>> = Vec::new();
+
         if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= MAIN_CHAIN_PAYMENT.clone() {
             // if there is enough coins left in the root address make payment transaction
             transactions.push(Box::new(Transaction::new(
@@ -1698,21 +1761,13 @@ impl BlockChainTree {
             self.decrease_funds(&ROOT_PUBLIC_ADDRESS, &MAIN_CHAIN_PAYMENT)
                 .await?;
         }
+
         transactions.extend(
-            (0..transactions_amount).map(|_| unsafe { trxs_pool.pop().unwrap_unchecked() }),
+            (0..transactions_amount).map(|_| unsafe { trxs_pool.pop().unwrap_unchecked().1 }),
         );
 
         // get hashes & remove transaction references
-        let mut trxs_hashes = self.trxs_hashes.write().await;
-        let transactions_hashes: Vec<_> = transactions
-            .iter()
-            .map(|trx| {
-                let hash = trx.hash();
-                trxs_hashes.remove(&hash);
-                hash
-            })
-            .collect();
-        drop(trxs_hashes);
+        let transactions_hashes: Vec<_> = transactions.iter().map(|trx| trx.hash()).collect();
 
         // build merkle tree & get root
         let mut merkle_tree = MerkleTree::new();
@@ -1757,8 +1812,6 @@ impl BlockChainTree {
             ))
             .into_report();
         }
-
-        //let fee = Chain::calculate_fee(&difficulty);
 
         let basic_info = BasicInfo::new(
             timestamp,
