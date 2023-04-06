@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use blockchaintree::block::{self, BasicInfo, TransactionBlock};
-use blockchaintree::blockchaintree::BlockChainTree;
+use blockchaintree::blockchaintree::{BlockChainTree, ROOT_PUBLIC_ADDRESS};
 use blockchaintree::tools;
 use blockchaintree::{self, blockchaintree::ROOT_PRIVATE_ADDRESS, transaction::Transactionable};
 use num_bigint::{BigUint, ToBigUint};
@@ -126,6 +126,12 @@ async fn mine_main_chain() {
         "Funds for address: {:?} {:?}",
         SENDER,
         blockchain.get_funds(SENDER).await.unwrap()
+    );
+
+    println!(
+        "Funds for address: {:?} {:?}",
+        ROOT_PUBLIC_ADDRESS,
+        blockchain.get_funds(&ROOT_PUBLIC_ADDRESS).await.unwrap()
     );
 
     chain.dump_config().await.unwrap();
