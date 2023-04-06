@@ -1,6 +1,7 @@
 use std::str::FromStr;
 
 use blockchaintree::block::{self, BasicInfo, TransactionBlock};
+use blockchaintree::blockchaintree::BlockChainTree;
 use blockchaintree::tools;
 use blockchaintree::{self, blockchaintree::ROOT_PRIVATE_ADDRESS, transaction::Transactionable};
 use num_bigint::{BigUint, ToBigUint};
@@ -85,14 +86,23 @@ fn generate_public_root_key() {
 
 #[tokio::test]
 async fn mine_main_chain() {
-    let blockchain = blockchaintree::blockchaintree::BlockChainTree::without_config().unwrap();
+    let blockchain = match BlockChainTree::with_config() {
+        Err(e) => {
+            println!("Failed to load blockchain with config {:?}", e.to_string());
+            //info!("Trying to load blockchain without config");
+            BlockChainTree::without_config().unwrap()
+        }
+        Ok(tree) => tree,
+    };
+
+    let chain = blockchain.get_main_chain();
+
+    println!("Difficulty: {:?}", chain.get_difficulty().await);
 
     let res = blockchain
         .emit_main_chain_block(BigUint::from(0u64), *SENDER, 1000)
         .await
         .unwrap();
-
-    let chain = blockchain.get_main_chain();
 
     assert_eq!(
         chain
@@ -110,15 +120,20 @@ async fn mine_main_chain() {
         BigUint::from(0u64)
     );
 
+    println!("Difficulty: {:?}", chain.get_difficulty().await);
+
     println!(
         "Funds for address: {:?} {:?}",
         SENDER,
         blockchain.get_funds(SENDER).await.unwrap()
     );
+
+    chain.dump_config().await.unwrap();
+    blockchain.dump_pool().await.unwrap();
 }
 
 #[test]
-fn biuint_test() {
+fn biguint_test() {
     let num = BigUint::from_str("17239872183291832718372614872678146291748972189471829748921748")
         .unwrap();
     let mut dump: Vec<u8> = Vec::new();

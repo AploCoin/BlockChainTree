@@ -48,12 +48,12 @@ static GENESIS_BLOCK: [u8; 32] = [
     0x7d, 0x6a, 0x29, 0x0d, 0xaf, 0xa7, 0x73, 0xa6, 0x5c, 0x0f, 0x01, 0x9d, 0x5c, 0xbc, 0x0a, 0x7c,
 ]; // God is dead, noone will stop anarchy
 static BEGINNING_DIFFICULTY: [u8; 32] = [
-    0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 ];
 static MAX_DIFFICULTY: [u8; 32] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 128,
 ];
 
 pub static ROOT_PRIVATE_ADDRESS: [u8; 32] = [1u8; 32];
@@ -68,10 +68,10 @@ lazy_static! {
     static ref INITIAL_FEE: BigUint = BigUint::from(16666666usize); // 100_000_000//4
     static ref FEE_STEP: BigUint = BigUint::from(392156usize); // 100_000_000//255
     static ref MAIN_CHAIN_PAYMENT: BigUint = INITIAL_FEE.clone();
-    static ref COINS_PER_CYCLE:BigUint = (MAIN_CHAIN_PAYMENT.clone()*MAX_TRANSACTIONS_PER_BLOCK*BLOCKS_PER_ITERATION) + COIN_FRACTIONS.clone()*10000usize;
+    static ref COINS_PER_CYCLE:BigUint = (MAIN_CHAIN_PAYMENT.clone()*2000usize*BLOCKS_PER_ITERATION) + COIN_FRACTIONS.clone()*10000usize;
 }
 
-static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
+//static MAX_TRANSACTIONS_PER_BLOCK: usize = 3000;
 static BLOCKS_PER_ITERATION: usize = 12960;
 
 type TrxsPool = BinaryHeap<TransactionableItem>;
@@ -641,10 +641,12 @@ impl Chain {
     /// Calculate fee for the difficulty
     ///
     /// takes difficulty and calculates fee for it
+    ///
+    /// TODO: Change the way fee calculated
     pub fn calculate_fee(difficulty: &[u8; 32]) -> BigUint {
         let mut leading_zeroes = 0;
         for byte in difficulty {
-            let bytes_leading_zeroes = byte.leading_zeros() as usize;
+            let bytes_leading_zeroes = byte.count_zeros() as usize;
             leading_zeroes += bytes_leading_zeroes;
             if bytes_leading_zeroes < 8 {
                 break;
@@ -955,7 +957,6 @@ impl DerivativeChain {
 #[derive(Clone)]
 pub struct BlockChainTree {
     trxs_pool: Arc<RwLock<TransactionsPool>>,
-    //trxs_hashes: Arc<RwLock<HashSet<[u8; 32]>>>,
     summary_db: Arc<RwLock<Db>>,
     old_summary_db: Arc<RwLock<Db>>,
     main_chain: Arc<Chain>,
@@ -1004,7 +1005,7 @@ impl BlockChainTree {
         let mut buf: [u8; 4] = [0; 4];
 
         // allocate VecDeque
-        let mut trxs_pool = TransactionsPool::with_capacity(trxs_amount as usize);
+        let mut trxs_pool = TransactionsPool::with_capacity(10000);
 
         // parsing transactions
         for _ in 0..trxs_amount {
@@ -1103,7 +1104,7 @@ impl BlockChainTree {
             .attach_printable("failed to open old summary db")?;
 
         // allocate VecDeque
-        let trxs_pool = TransactionsPool::new();
+        let trxs_pool = TransactionsPool::with_capacity(10000);
 
         // opening main chain
         let main_chain = Chain::new_without_config(MAIN_CHAIN_DIRECTORY, &GENESIS_BLOCK)
@@ -1702,7 +1703,7 @@ impl BlockChainTree {
                 BCTreeErrorKind::NewTransaction,
             ))?;
 
-        self.add_funds(tr.get_sender(), amount)
+        self.add_funds(tr.get_sender(), &(amount - &fee))
             .await
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
@@ -1737,15 +1738,11 @@ impl BlockChainTree {
             .into_report();
         }
 
-        // get transactions for the block
-        let transactions_amount = if MAX_TRANSACTIONS_PER_BLOCK > trxs_pool.len() {
-            trxs_pool.len()
-        } else {
-            MAX_TRANSACTIONS_PER_BLOCK
-        };
+        let transactions_amount = trxs_pool.len();
 
         // get transactions
-        let mut transactions: Vec<Box<dyn Transactionable + Send + Sync>> = Vec::new();
+        let mut transactions: Vec<Box<dyn Transactionable + Send + Sync>> =
+            Vec::with_capacity(transactions_amount + 1);
 
         if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= MAIN_CHAIN_PAYMENT.clone() {
             // if there is enough coins left in the root address make payment transaction
@@ -1854,29 +1851,62 @@ impl BlockChainTree {
         addr: [u8; 33],
         timestamp: u64,
     ) -> Result<Box<dyn MainChainBlock + Send + Sync>, BlockChainTreeError> {
-        let difficulty = self.main_chain.get_locked_difficulty().await;
+        let mut difficulty = self.main_chain.get_locked_difficulty().await;
         let height = self.main_chain.get_height().await as usize;
-        if height % BLOCKS_PER_ITERATION == 0 && height > 0 {
-            // new cycle
-            let block = self
-                .emit_summarize_block(pow, addr, timestamp, *difficulty)
-                .await?;
+        let block: Box<dyn MainChainBlock + Send + Sync> =
+            if height % BLOCKS_PER_ITERATION == 0 && height > 0 {
+                // new cycle
+                let block = self
+                    .emit_summarize_block(pow, addr, timestamp, *difficulty)
+                    .await?;
 
-            let mut summary_db_lock = self.summary_db.write().await;
-            let mut old_summary_db_lock = self.old_summary_db.write().await;
+                let mut summary_db_lock = self.summary_db.write().await;
+                let mut old_summary_db_lock = self.old_summary_db.write().await;
 
-            let (summary_db, old_summary_db) = self.move_summary_database()?;
+                let (summary_db, old_summary_db) = self.move_summary_database()?;
 
-            *summary_db_lock = summary_db;
-            *old_summary_db_lock = old_summary_db;
+                *summary_db_lock = summary_db;
+                *old_summary_db_lock = old_summary_db;
 
-            Ok(Box::new(block))
-        } else {
-            let block = self
-                .emit_transaction_block(pow, addr, timestamp, *difficulty)
-                .await?;
+                Box::new(block)
+            } else {
+                let block = self
+                    .emit_transaction_block(pow, addr, timestamp, *difficulty)
+                    .await?;
 
-            Ok(Box::new(block))
+                Box::new(block)
+            };
+
+        // TODO: rewrite the way difficulty calculated
+        if *difficulty != MAX_DIFFICULTY {
+            let last_block = self.main_chain.find_by_height(height as u64).await?;
+            if let Some(last_block) = last_block {
+                if timestamp - last_block.get_info().timestamp < 600 {
+                    for byte in difficulty.iter_mut() {
+                        if *byte > 0 {
+                            *byte = *byte << 1;
+                            break;
+                        }
+                    }
+                } else if timestamp - last_block.get_info().timestamp > 600 {
+                    let mut index: usize = 0;
+                    for (ind, byte) in difficulty.iter().enumerate() {
+                        let byte = *byte;
+                        if byte > 0 {
+                            if byte == 0xFF && ind > 0 {
+                                index = ind - 1;
+                                break;
+                            }
+                            index = ind;
+                            break;
+                        }
+                    }
+
+                    difficulty[index] = (difficulty[index] >> 1) & 0b10000000;
+                }
+            }
         }
+
+        Ok(block)
     }
 }
