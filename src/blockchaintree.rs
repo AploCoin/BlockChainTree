@@ -1879,16 +1879,17 @@ impl BlockChainTree {
 
         // TODO: rewrite the way difficulty calculated
         if *difficulty != MAX_DIFFICULTY {
-            let last_block = self.main_chain.find_by_height(height as u64).await?;
+            let last_block = self.main_chain.find_by_height((height - 1) as u64).await?;
             if let Some(last_block) = last_block {
-                if timestamp - last_block.get_info().timestamp < 600 {
+                let last_block_timestamp = last_block.get_info().timestamp;
+                if timestamp - last_block_timestamp < 600 {
                     for byte in difficulty.iter_mut() {
                         if *byte > 0 {
                             *byte = *byte << 1;
                             break;
                         }
                     }
-                } else if timestamp - last_block.get_info().timestamp > 600 {
+                } else if timestamp - last_block_timestamp > 600 {
                     let mut index: usize = 0;
                     for (ind, byte) in difficulty.iter().enumerate() {
                         let byte = *byte;
@@ -1902,7 +1903,7 @@ impl BlockChainTree {
                         }
                     }
 
-                    difficulty[index] = (difficulty[index] >> 1) & 0b10000000;
+                    difficulty[index] = (difficulty[index] >> 1) | 0b10000000;
                 }
             }
         }
