@@ -133,18 +133,15 @@ pub fn check_pow(prev_hash: [u8; 32], difficulty: [u8; 32], pow: &BigUint) -> bo
 
     let difficulty: [u64; 4] = unsafe { transmute(difficulty) };
 
-    let mut to_return = false;
-
     for (r, d) in result.iter().zip(difficulty) {
         match r.cmp(&d) {
             std::cmp::Ordering::Less => {
-                to_return = true;
-                break;
+                return true;
             }
             std::cmp::Ordering::Equal => {}
             std::cmp::Ordering::Greater => break,
         }
     }
 
-    to_return
+    false
 }
