@@ -5,6 +5,7 @@ use crate::tools;
 use crate::transaction::{Transaction, Transactionable};
 use byteorder::{BigEndian, ReadBytesExt};
 use num_bigint::BigUint;
+use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::mem::transmute;
 //use std::mem::transmute_copy;
@@ -20,8 +21,6 @@ macro_rules! bytes_to_u64 {
             .unwrap()
     };
 }
-
-static ALREADY_SET: &str = "data is already set";
 
 #[derive(Debug, Clone)]
 pub struct BasicInfo {
@@ -272,7 +271,7 @@ impl TransactionBlock {
         Ok(to_return)
     }
 
-    pub fn parse(data: &[u8], block_size: u32) -> Result<TransactionBlock, BlockError> {
+    pub fn parse(data: &[u8]) -> Result<TransactionBlock, BlockError> {
         let mut offset: usize = 0;
 
         // merkle tree root
@@ -626,4 +625,26 @@ pub trait MainChainBlock {
     fn dump(&self) -> Result<Vec<u8>, BlockError>;
     fn get_info(&self) -> BasicInfo;
     fn get_merkle_root(&self) -> [u8; 32];
+}
+
+pub type MainChainBlockBox = Box<dyn MainChainBlock + Send + Sync>;
+
+impl Eq for MainChainBlockBox {}
+
+impl PartialEq for MainChainBlockBox {
+    fn eq(&self, other: &Self) -> bool {
+        self.get_info().timestamp == other.get_info().timestamp
+    }
+}
+
+impl PartialOrd for MainChainBlockBox {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        Some(self.get_info().timestamp.cmp(&other.get_info().timestamp))
+    }
+}
+
+impl Ord for MainChainBlockBox {
+    fn cmp(&self, other: &Self) -> Ordering {
+        self.get_info().timestamp.cmp(&other.get_info().timestamp)
+    }
 }
