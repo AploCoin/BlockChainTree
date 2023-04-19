@@ -108,6 +108,10 @@ impl TransactionsPool {
         self.hashes.len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
     pub fn transactions_iter(&self) -> Iter<'_, TransactionableItem> {
         self.pool.iter()
     }
@@ -1882,28 +1886,32 @@ impl BlockChainTree {
             let last_block = self.main_chain.find_by_height((height - 1) as u64).await?;
             if let Some(last_block) = last_block {
                 let last_block_timestamp = last_block.get_info().timestamp;
-                if timestamp - last_block_timestamp < 600 {
-                    for byte in difficulty.iter_mut() {
-                        if *byte > 0 {
-                            *byte = *byte << 1;
-                            break;
-                        }
-                    }
-                } else if timestamp - last_block_timestamp > 600 {
-                    let mut index: usize = 0;
-                    for (ind, byte) in difficulty.iter().enumerate() {
-                        let byte = *byte;
-                        if byte > 0 {
-                            if byte == 0xFF && ind > 0 {
-                                index = ind - 1;
+                match (timestamp - last_block_timestamp).cmp(&600) {
+                    std::cmp::Ordering::Less => {
+                        for byte in difficulty.iter_mut() {
+                            if *byte > 0 {
+                                *byte <<= 1;
                                 break;
                             }
-                            index = ind;
-                            break;
                         }
                     }
+                    std::cmp::Ordering::Equal => {}
+                    std::cmp::Ordering::Greater => {
+                        let mut index: usize = 0;
+                        for (ind, byte) in difficulty.iter().enumerate() {
+                            let byte = *byte;
+                            if byte > 0 {
+                                if byte == 0xFF && ind > 0 {
+                                    index = ind - 1;
+                                    break;
+                                }
+                                index = ind;
+                                break;
+                            }
+                        }
 
-                    difficulty[index] = (difficulty[index] >> 1) | 0b10000000;
+                        difficulty[index] = (difficulty[index] >> 1) | 0b10000000;
+                    }
                 }
             }
         }
