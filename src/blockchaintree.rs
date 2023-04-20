@@ -659,6 +659,38 @@ impl Chain {
 
         INITIAL_FEE.clone() + (FEE_STEP.clone() * (leading_zeroes - 1))
     }
+
+    /// Goes trough all the blocks in main chain and verifies each of them
+    pub async fn verify_chain(&self) -> Result<(), BlockChainTreeError> {
+        let height = *self.height.read().await;
+
+        let prev_hash = self.genesis_hash;
+        for i in 0..height {
+            let block = match self.find_by_height(i).await? {
+                None => {
+                    return Err(Report::new(BlockChainTreeError::Chain(
+                        ChainErrorKind::FindByHeight,
+                    ))
+                    .attach_printable(format!("Block height: {:?}", i)))
+                }
+                Some(block) => block,
+            };
+
+            if !block.verify_block(&prev_hash) {
+                return Err(Report::new(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToVerify,
+                ))
+                .attach_printable(format!(
+                    "Block hash: {:?}",
+                    block.hash().change_context(BlockChainTreeError::Chain(
+                        ChainErrorKind::FailedToVerify,
+                    ))?
+                )));
+            }
+        }
+
+        Ok(())
+    }
 }
 
 pub struct DerivativeChain {

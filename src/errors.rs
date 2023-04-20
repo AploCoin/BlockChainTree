@@ -145,7 +145,8 @@ sub_errors![
         FindByHashE: "failed to find by hash",
         DumpConfig: "failed to dump config",
         InitWithoutConfig: "failed to create a new chain without config",
-        FindTransaction: "failed to find transaction"
+        FindTransaction: "failed to find transaction",
+        FailedToVerify: "failed to verify block"
     },
     DerivChainErrorKind {
         Init: "failed to create a new derivative chain",

@@ -412,6 +412,10 @@ impl MainChainBlock for TransactionBlock {
     fn get_merkle_root(&self) -> [u8; 32] {
         self.merkle_tree_root
     }
+
+    fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
+        self.default_info.previous_hash.eq(prev_hash)
+    }
 }
 
 pub struct TokenBlock {
@@ -617,6 +621,10 @@ impl MainChainBlock for SummarizeBlock {
     fn get_merkle_root(&self) -> [u8; 32] {
         self.founder_transaction
     }
+
+    fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
+        self.default_info.previous_hash.eq(prev_hash)
+    }
 }
 
 pub trait MainChainBlock {
@@ -625,6 +633,7 @@ pub trait MainChainBlock {
     fn dump(&self) -> Result<Vec<u8>, BlockError>;
     fn get_info(&self) -> BasicInfo;
     fn get_merkle_root(&self) -> [u8; 32];
+    fn verify_block(&self, prev_hash: &[u8; 32]) -> bool;
 }
 
 pub type MainChainBlockBox = Box<dyn MainChainBlock + Send + Sync>;
