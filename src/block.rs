@@ -8,7 +8,7 @@ use num_bigint::BigUint;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::mem::transmute;
-use std::rc::Rc;
+use std::sync::Arc;
 
 use error_stack::{Report, Result, ResultExt};
 
@@ -637,7 +637,7 @@ pub trait MainChainBlock {
 }
 
 pub type MainChainBlockBox = Box<dyn MainChainBlock + Send + Sync>;
-pub type MainChainBlockRc = Rc<dyn MainChainBlock + Send + Sync>;
+pub type MainChainBlockArc = Arc<dyn MainChainBlock + Send + Sync>;
 
 // impl Eq for MainChainBlockBox {}
 
