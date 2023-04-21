@@ -8,7 +8,7 @@ use num_bigint::BigUint;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::mem::transmute;
-//use std::mem::transmute_copy;
+use std::rc::Rc;
 
 use error_stack::{Report, Result, ResultExt};
 
@@ -412,6 +412,10 @@ impl MainChainBlock for TransactionBlock {
     fn get_merkle_root(&self) -> [u8; 32] {
         self.merkle_tree_root
     }
+
+    fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
+        self.default_info.previous_hash.eq(prev_hash)
+    }
 }
 
 pub struct TokenBlock {
@@ -617,6 +621,10 @@ impl MainChainBlock for SummarizeBlock {
     fn get_merkle_root(&self) -> [u8; 32] {
         self.founder_transaction
     }
+
+    fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
+        self.default_info.previous_hash.eq(prev_hash)
+    }
 }
 
 pub trait MainChainBlock {
@@ -625,25 +633,47 @@ pub trait MainChainBlock {
     fn dump(&self) -> Result<Vec<u8>, BlockError>;
     fn get_info(&self) -> BasicInfo;
     fn get_merkle_root(&self) -> [u8; 32];
+    fn verify_block(&self, prev_hash: &[u8; 32]) -> bool;
 }
 
 pub type MainChainBlockBox = Box<dyn MainChainBlock + Send + Sync>;
+pub type MainChainBlockRc = Rc<dyn MainChainBlock + Send + Sync>;
 
-impl Eq for MainChainBlockBox {}
+// impl Eq for MainChainBlockBox {}
 
-impl PartialEq for MainChainBlockBox {
+// impl PartialEq for MainChainBlockBox {
+//     fn eq(&self, other: &Self) -> bool {
+//         self.get_info().timestamp == other.get_info().timestamp
+//     }
+// }
+
+// impl PartialOrd for MainChainBlockBox {
+//     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+//         Some(self.get_info().timestamp.cmp(&other.get_info().timestamp))
+//     }
+// }
+
+// impl Ord for MainChainBlockBox {
+//     fn cmp(&self, other: &Self) -> Ordering {
+//         self.get_info().timestamp.cmp(&other.get_info().timestamp)
+//     }
+// }
+
+impl Eq for dyn MainChainBlock + Send + Sync {}
+
+impl PartialEq for dyn MainChainBlock + Send + Sync {
     fn eq(&self, other: &Self) -> bool {
         self.get_info().timestamp == other.get_info().timestamp
     }
 }
 
-impl PartialOrd for MainChainBlockBox {
+impl PartialOrd for dyn MainChainBlock + Send + Sync {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.get_info().timestamp.cmp(&other.get_info().timestamp))
     }
 }
 
-impl Ord for MainChainBlockBox {
+impl Ord for dyn MainChainBlock + Send + Sync {
     fn cmp(&self, other: &Self) -> Ordering {
         self.get_info().timestamp.cmp(&other.get_info().timestamp)
     }
