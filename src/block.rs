@@ -629,7 +629,7 @@ impl MainChainBlock for SummarizeBlock {
 
 /// Deserializes block's dump into MainChainBlockBox
 pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockBox, BlockError> {
-    if dump.len() == 0 {
+    if dump.is_empty() {
         return Err(
             Report::new(BlockError::HeaderError(DumpHeadersErrorKind::WrongHeader))
                 .attach_printable("The size of supplied data is 0"),
