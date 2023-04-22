@@ -627,6 +627,31 @@ impl MainChainBlock for SummarizeBlock {
     }
 }
 
+pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockBox, BlockError> {
+    if dump.len() == 0 {
+        return Err(
+            Report::new(BlockError::HeaderError(DumpHeadersErrorKind::WrongHeader))
+                .attach_printable("The size of supplied data is 0"),
+        );
+    }
+
+    let header = Headers::from_u8(*unsafe { dump.get_unchecked(0) })
+        .change_context(BlockError::HeaderError(DumpHeadersErrorKind::UknownHeader))?;
+
+    let block: MainChainBlockBox = match header {
+        Headers::TransactionBlock => Box::new(TransactionBlock::parse(&dump[1..])?),
+        Headers::SummarizeBlock => Box::new(SummarizeBlock::parse(&dump[1..])?),
+        _ => {
+            return Err(
+                Report::new(BlockError::HeaderError(DumpHeadersErrorKind::WrongHeader))
+                    .attach_printable("Not block header"),
+            );
+        }
+    };
+
+    Ok(block)
+}
+
 pub trait MainChainBlock {
     fn hash(&self) -> Result<[u8; 32], BlockError>;
     fn get_dump_size(&self) -> usize;
