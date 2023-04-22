@@ -1,5 +1,5 @@
 #![allow(non_snake_case)]
-use crate::block::{BasicInfo, MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::block::{self, BasicInfo, MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
 use crate::merkletree::MerkleTree;
 use crate::tools;
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
@@ -460,22 +460,10 @@ impl Chain {
 
         let dump = dump.unwrap();
 
-        if dump[0] == Headers::TransactionBlock as u8 {
-            let block = TransactionBlock::parse(&dump[1..])
-                .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
-
-            return Ok(Some(Box::new(block)));
-        } else if dump[0] == Headers::SummarizeBlock as u8 {
-            let block = SummarizeBlock::parse(&dump[1..])
-                .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
-
-            return Ok(Some(Box::new(block)));
-        }
-
-        Err(
-            Report::new(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))
-                .attach_printable("block type not found"),
-        )
+        Ok(Some(
+            block::deserialize_main_chain_block(&dump)
+                .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?,
+        ))
     }
 
     /// Get deserialized block by it's hash
