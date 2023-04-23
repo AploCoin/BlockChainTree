@@ -1,6 +1,6 @@
 #![allow(non_snake_case)]
 use crate::block::{
-    self, BasicInfo, GenesisBlock, MainChainBlock, MainChainBlockBox, SummarizeBlock, TokenBlock,
+    self, BasicInfo, GenesisBlock, MainChainBlock, MainChainBlockArc, SummarizeBlock, TokenBlock,
     TransactionBlock,
 };
 use crate::merkletree::MerkleTree;
@@ -1982,7 +1982,7 @@ impl BlockChainTree {
     /// returns error if the block couldn't be verified
     pub async fn new_main_chain_block(
         &self,
-        new_block: &MainChainBlockBox,
+        new_block: &MainChainBlockArc,
     ) -> Result<bool, BlockChainTreeError> {
         let mut difficulty = self.main_chain.difficulty.write().await;
         let mut trxs_pool = self.trxs_pool.write().await;
