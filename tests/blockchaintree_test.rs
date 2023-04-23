@@ -2,9 +2,10 @@ use std::str::FromStr;
 
 use blockchaintree::block::{self, BasicInfo, TransactionBlock};
 use blockchaintree::blockchaintree::{BlockChainTree, ROOT_PUBLIC_ADDRESS};
-use blockchaintree::tools;
+use blockchaintree::tools::{self, check_pow};
 use blockchaintree::{self, blockchaintree::ROOT_PRIVATE_ADDRESS, transaction::Transactionable};
 use num_bigint::{BigUint, ToBigUint};
+use num_traits::FromPrimitive;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 static SENDER: &[u8; 33] = b"123456789012345678901234567890123";
@@ -23,6 +24,7 @@ async fn chain_test() {
         //[1u8; 32],
         0,
         [5u8; 32],
+        SENDER.clone(),
     );
     let tr = blockchaintree::transaction::Transaction::new(
         SENDER.clone(),
@@ -160,7 +162,14 @@ fn biguint_test() {
 
 #[test]
 fn transaction_block_test() {
-    let default_info = BasicInfo::new(500, 0u64.to_biguint().unwrap(), [0u8; 32], 0, [5u8; 32]);
+    let default_info = BasicInfo::new(
+        500,
+        0u64.to_biguint().unwrap(),
+        [1u8; 32],
+        0,
+        [5u8; 32],
+        SENDER.clone(),
+    );
     let tr = blockchaintree::transaction::Transaction::new(
         SENDER.clone(),
         RECIEVER.clone(),
@@ -172,7 +181,7 @@ fn transaction_block_test() {
         vec![tr.hash()],
         50.to_biguint().unwrap(),
         default_info,
-        [0u8; 32],
+        [1u8; 32],
     );
 
     let dump = block.dump().unwrap();
@@ -180,4 +189,9 @@ fn transaction_block_test() {
     let loaded_block = TransactionBlock::parse(&dump[1..]).unwrap();
 
     assert_eq!(block.hash().unwrap(), loaded_block.hash().unwrap());
+}
+
+#[test]
+fn check_pow_test() {
+    check_pow(&[0u8; 32], &[1u8; 32], &BigUint::from_i32(1).unwrap());
 }

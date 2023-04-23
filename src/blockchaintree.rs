@@ -1,9 +1,13 @@
 #![allow(non_snake_case)]
-use crate::block::{self, BasicInfo, MainChainBlock, SummarizeBlock, TokenBlock, TransactionBlock};
+use crate::block::{
+    self, BasicInfo, GenesisBlock, MainChainBlock, MainChainBlockBox, SummarizeBlock, TokenBlock,
+    TransactionBlock,
+};
 use crate::merkletree::MerkleTree;
-use crate::tools;
+use crate::tools::{self, check_pow};
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
+use std::cmp::Ordering;
 use std::collections::binary_heap::Iter;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryInto;
@@ -43,11 +47,11 @@ static TRANSACTIONS_FOLDER: &str = "TRANSACTIONS/";
 static CONFIG_FILE: &str = "Chain.config";
 static LOOKUP_TABLE_FILE: &str = "LookUpTable.dat";
 static TRANSACTIONS_POOL: &str = "TRXS_POOL.pool";
-static GENESIS_BLOCK: [u8; 32] = [
+pub static GENESIS_BLOCK: [u8; 32] = [
     0x77, 0xe6, 0xd9, 0x52, 0x67, 0x57, 0x8e, 0x85, 0x39, 0xa9, 0xcf, 0xe0, 0x03, 0xf4, 0xf7, 0xfe,
     0x7d, 0x6a, 0x29, 0x0d, 0xaf, 0xa7, 0x73, 0xa6, 0x5c, 0x0f, 0x01, 0x9d, 0x5c, 0xbc, 0x0a, 0x7c,
 ]; // God is dead, noone will stop anarchy
-static BEGINNING_DIFFICULTY: [u8; 32] = [
+pub static BEGINNING_DIFFICULTY: [u8; 32] = [
     0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 ];
@@ -61,6 +65,8 @@ pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
     3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96,
     72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143,
 ];
+
+pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
 
 lazy_static! {
     // one coin is 100_000_000 smol coins
@@ -394,6 +400,9 @@ impl Chain {
         &self,
         height: u64,
     ) -> Result<Option<Vec<u8>>, BlockChainTreeError> {
+        if height == 0 {
+            return Ok(None);
+        }
         let chain_height = self.height.read().await;
         if height > *chain_height {
             return Ok(None);
@@ -443,6 +452,9 @@ impl Chain {
         &self,
         height: u64,
     ) -> Result<Option<Box<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
+        if height == 0 {
+            return Ok(Some(Box::new(GenesisBlock {})));
+        }
         let chain_height = self.height.read().await;
         if height > *chain_height {
             return Ok(None);
@@ -564,7 +576,7 @@ impl Chain {
             db,
             height_reference,
             transactions: transactions_db,
-            height: Arc::new(RwLock::new(0)),
+            height: Arc::new(RwLock::new(1)),
             genesis_hash: *genesis_hash,
             difficulty: Arc::new(RwLock::new(BEGINNING_DIFFICULTY)),
         })
@@ -627,7 +639,7 @@ impl Chain {
         let last_hash = self.get_last_hash().await?;
 
         let difficulty = self.get_difficulty().await;
-        Ok(tools::check_pow(last_hash, difficulty, &pow))
+        Ok(tools::check_pow(&last_hash, &difficulty, &pow))
     }
 
     /// Calculate fee for the difficulty
@@ -1411,6 +1423,9 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
+        if funds.is_zero() {
+            return Ok(());
+        }
         let result = self.summary_db.as_ref().read().await.get(addr);
         match result {
             Ok(None) => {
@@ -1754,7 +1769,7 @@ impl BlockChainTree {
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
 
-        if !tools::check_pow(last_hash, difficulty, &pow) {
+        if !tools::check_pow(&last_hash, &difficulty, &pow) {
             // if pow is bad
             return Err(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::WrongPow,
@@ -1762,26 +1777,34 @@ impl BlockChainTree {
             .into_report();
         }
 
+        let fee = Chain::calculate_fee(&difficulty);
+
         let transactions_amount = trxs_pool.len();
 
         // get transactions
         let mut transactions: Vec<Box<dyn Transactionable + Send + Sync>> =
             Vec::with_capacity(transactions_amount + 1);
 
-        if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= MAIN_CHAIN_PAYMENT.clone() {
-            // if there is enough coins left in the root address make payment transaction
-            transactions.push(Box::new(Transaction::new(
-                ROOT_PUBLIC_ADDRESS,
-                addr,
-                timestamp,
-                MAIN_CHAIN_PAYMENT.clone(),
-                ROOT_PRIVATE_ADDRESS,
-            )));
+        // founder transaction
+        let founder_transaction_amount = (transactions_amount * &fee)
+            + if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= *MAIN_CHAIN_PAYMENT {
+                // if there is enough coins left in the root address make payment transaction
+                self.decrease_funds(&ROOT_PUBLIC_ADDRESS, &MAIN_CHAIN_PAYMENT)
+                    .await?;
+                MAIN_CHAIN_PAYMENT.clone()
+            } else {
+                0usize.into()
+            };
 
-            self.add_funds(&addr, &MAIN_CHAIN_PAYMENT).await?;
-            self.decrease_funds(&ROOT_PUBLIC_ADDRESS, &MAIN_CHAIN_PAYMENT)
-                .await?;
-        }
+        transactions.push(Box::new(Transaction::new(
+            ROOT_PUBLIC_ADDRESS,
+            addr,
+            timestamp,
+            founder_transaction_amount.clone(),
+            ROOT_PRIVATE_ADDRESS,
+        )));
+
+        self.add_funds(&addr, &founder_transaction_amount).await?;
 
         transactions.extend(
             (0..transactions_amount).map(|_| unsafe { trxs_pool.pop().unwrap_unchecked().1 }),
@@ -1795,14 +1818,13 @@ impl BlockChainTree {
         merkle_tree.add_objects(&transactions_hashes);
         let merkle_tree_root = *merkle_tree.get_root();
 
-        let fee = Chain::calculate_fee(&difficulty);
-
         let basic_info = BasicInfo::new(
             timestamp,
             pow,
             last_hash,
             self.main_chain.get_height().await,
             difficulty,
+            addr,
         );
 
         // add block to the main chain
@@ -1826,7 +1848,7 @@ impl BlockChainTree {
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
 
-        if !tools::check_pow(last_hash, difficulty, &pow) {
+        if !tools::check_pow(&last_hash, &difficulty, &pow) {
             // if pow is bad
             return Err(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::WrongPow,
@@ -1840,6 +1862,7 @@ impl BlockChainTree {
             last_hash,
             self.main_chain.get_height().await,
             difficulty,
+            addr,
         );
 
         let founder_transaction = Transaction::new(
@@ -1860,6 +1883,49 @@ impl BlockChainTree {
             .await?;
 
         Ok(block)
+    }
+
+    pub async fn new_main_chain_difficulty(
+        &self,
+        timestamp: u64,
+        difficulty: &mut [u8; 32],
+        height: u64,
+    ) -> Result<(), BlockChainTreeError> {
+        // TODO: rewrite the way difficulty calculated
+        if *difficulty != MAX_DIFFICULTY {
+            let last_block = self.main_chain.find_by_height(height - 1).await?;
+            if let Some(last_block) = last_block {
+                let last_block_timestamp = last_block.get_info().timestamp;
+                match (timestamp - last_block_timestamp).cmp(&600) {
+                    std::cmp::Ordering::Less => {
+                        for byte in difficulty.iter_mut() {
+                            if *byte > 0 {
+                                *byte <<= 1;
+                                break;
+                            }
+                        }
+                    }
+                    std::cmp::Ordering::Equal => {}
+                    std::cmp::Ordering::Greater => {
+                        let mut index: usize = 0;
+                        for (ind, byte) in difficulty.iter().enumerate() {
+                            let byte = *byte;
+                            if byte > 0 {
+                                if byte == 0xFF && ind > 0 {
+                                    index = ind - 1;
+                                    break;
+                                }
+                                index = ind;
+                                break;
+                            }
+                        }
+
+                        difficulty[index] = (difficulty[index] >> 1) | 0b10000000;
+                    }
+                }
+            }
+        }
+        Ok(())
     }
 
     /// Create main chain block and add it to the main chain
@@ -1901,41 +1967,291 @@ impl BlockChainTree {
                 Box::new(block)
             };
 
-        // TODO: rewrite the way difficulty calculated
-        if *difficulty != MAX_DIFFICULTY {
-            let last_block = self.main_chain.find_by_height((height - 1) as u64).await?;
-            if let Some(last_block) = last_block {
-                let last_block_timestamp = last_block.get_info().timestamp;
-                match (timestamp - last_block_timestamp).cmp(&600) {
-                    std::cmp::Ordering::Less => {
-                        for byte in difficulty.iter_mut() {
-                            if *byte > 0 {
-                                *byte <<= 1;
-                                break;
-                            }
-                        }
-                    }
-                    std::cmp::Ordering::Equal => {}
-                    std::cmp::Ordering::Greater => {
-                        let mut index: usize = 0;
-                        for (ind, byte) in difficulty.iter().enumerate() {
-                            let byte = *byte;
-                            if byte > 0 {
-                                if byte == 0xFF && ind > 0 {
-                                    index = ind - 1;
-                                    break;
-                                }
-                                index = ind;
-                                break;
-                            }
-                        }
+        self.new_main_chain_difficulty(timestamp, &mut difficulty, height as u64)
+            .await?;
 
-                        difficulty[index] = (difficulty[index] >> 1) | 0b10000000;
+        Ok(block)
+    }
+
+    /// Adds new block, checks for block's validity
+    ///
+    /// returns true is block was added/already present
+    ///
+    /// returns false if the block is valid, but there is already a block there or it has diverging transactions
+    ///
+    /// returns error if the block couldn't be verified
+    pub async fn new_main_chain_block(
+        &self,
+        new_block: &MainChainBlockBox,
+    ) -> Result<bool, BlockChainTreeError> {
+        let mut difficulty = self.main_chain.difficulty.write().await;
+        let mut trxs_pool = self.trxs_pool.write().await;
+
+        let height = *self.main_chain.height.read().await;
+        let new_block_height = new_block.get_info().height;
+        let new_block_hash = new_block.hash().change_context(BlockChainTreeError::Chain(
+            ChainErrorKind::FailedToHashBlock,
+        ))?;
+
+        if new_block_height == 0 {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Tried to add block with height 0"),
+            );
+        }
+
+        match new_block_height.cmp(&height) {
+            Ordering::Less => {
+                // not the last block
+                let current_block = match self.main_chain.find_by_height(new_block_height).await? {
+                    Some(block) => block,
+                    None => {
+                        return Err(Report::new(BlockChainTreeError::Chain(
+                            ChainErrorKind::FailedToVerify,
+                        )));
                     }
+                };
+                let current_block_hash =
+                    current_block
+                        .hash()
+                        .change_context(BlockChainTreeError::Chain(
+                            ChainErrorKind::FailedToHashBlock,
+                        ))?;
+
+                if current_block_hash == new_block_hash {
+                    return Ok(true);
                 }
+
+                let prev_block = match self.main_chain.find_by_height(new_block_height - 1).await? {
+                    Some(block) => block,
+                    None => {
+                        return Err(Report::new(BlockChainTreeError::Chain(
+                            ChainErrorKind::FailedToVerify,
+                        )));
+                    }
+                };
+                let prev_block_hash =
+                    prev_block
+                        .hash()
+                        .change_context(BlockChainTreeError::Chain(
+                            ChainErrorKind::FailedToHashBlock,
+                        ))?;
+
+                if !new_block.verify_block(&prev_block.hash().change_context(
+                    BlockChainTreeError::Chain(ChainErrorKind::FailedToHashBlock),
+                )?) {
+                    return Err(Report::new(BlockChainTreeError::Chain(
+                        ChainErrorKind::FailedToVerify,
+                    ))
+                    .attach_printable("Wrong previous hash"));
+                }
+
+                if !check_pow(
+                    &prev_block_hash,
+                    &current_block.get_info().difficulty,
+                    &new_block.get_info().pow,
+                ) {
+                    return Err(Report::new(BlockChainTreeError::Chain(
+                        ChainErrorKind::FailedToVerify,
+                    ))
+                    .attach_printable("Bad POW"));
+                }
+
+                return Ok(false);
+            }
+            Ordering::Equal => {
+                // the last block
+                let last_hash = self
+                    .main_chain
+                    .get_last_hash()
+                    .await
+                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Couldn't find last hash")?;
+
+                // verify new block with prev hash
+                if !new_block.verify_block(&last_hash) {
+                    return Err(Report::new(BlockChainTreeError::Chain(
+                        ChainErrorKind::FailedToVerify,
+                    ))
+                    .attach_printable("Wrong previous hash"));
+                }
+
+                // verify new blck's pow
+                if !tools::check_pow(&last_hash, &difficulty, &new_block.get_info().pow) {
+                    // if pow is bad
+                    return Err(BlockChainTreeError::BlockChainTree(
+                        BCTreeErrorKind::WrongPow,
+                    ))
+                    .into_report();
+                }
+
+                // get last block of the chain
+                let last_block = self
+                    .main_chain
+                    .get_last_block()
+                    .await
+                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Couldn't find last block")?
+                    .expect(
+                        "Something went horribly wrong, couldn't find last block in main chain",
+                    );
+
+                // check new block's timestamp
+                match new_block
+                    .get_info()
+                    .timestamp
+                    .cmp(&last_block.get_info().timestamp)
+                {
+                    Ordering::Less | Ordering::Equal => {
+                        return Err(Report::new(BlockChainTreeError::Chain(
+                            ChainErrorKind::FailedToVerify,
+                        ))
+                        .attach_printable("The block is older, than the last block"));
+                    }
+                    _ => {}
+                }
+
+                if height as usize % BLOCKS_PER_ITERATION == 0 {
+                    // summarize block
+                    if new_block.get_transactions().len() != 1 {
+                        return Err(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                            .into_report();
+                    }
+                    let founder_transaction = Transaction::new(
+                        ROOT_PUBLIC_ADDRESS,
+                        *new_block.get_founder(),
+                        new_block.get_info().timestamp,
+                        MAIN_CHAIN_PAYMENT.clone(),
+                        ROOT_PRIVATE_ADDRESS,
+                    );
+                    let constructed_block = SummarizeBlock::new(
+                        BasicInfo::new(
+                            new_block.get_info().timestamp,
+                            new_block.get_info().pow,
+                            last_hash,
+                            height,
+                            *difficulty,
+                            *new_block.get_founder(),
+                        ),
+                        founder_transaction.hash(),
+                    );
+
+                    if !new_block
+                        .get_merkle_root()
+                        .eq(&constructed_block.get_merkle_root())
+                    {
+                        return Err(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                            .into_report()
+                            .attach_printable("The merkle root is wrong");
+                    }
+
+                    self.add_funds(new_block.get_founder(), &MAIN_CHAIN_PAYMENT)
+                        .await?;
+
+                    self.main_chain.add_block_raw(&constructed_block).await?;
+                    self.main_chain
+                        .add_transaction_raw(founder_transaction)
+                        .await?;
+                } else {
+                    let transactions_amount = trxs_pool.len();
+
+                    //let new_block_transactions = new_block.get_transactions();
+
+                    let new_block_info = new_block.get_info();
+
+                    let mut transactions_hashes: Vec<[u8; 32]> =
+                        Vec::with_capacity(transactions_amount + 1);
+
+                    let fee = Chain::calculate_fee(&difficulty);
+
+                    let mut decrease_root_funds = false;
+
+                    // founder transaction
+                    let founder_transaction_amount = (transactions_amount * &fee)
+                        + if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= *MAIN_CHAIN_PAYMENT {
+                            // if there is enough coins left in the root address make payment transaction
+                            decrease_root_funds = true;
+                            MAIN_CHAIN_PAYMENT.clone()
+                        } else {
+                            0usize.into()
+                        };
+
+                    let founder_transaction = Transaction::new(
+                        ROOT_PUBLIC_ADDRESS,
+                        new_block_info.founder,
+                        new_block_info.timestamp,
+                        founder_transaction_amount.clone(),
+                        ROOT_PRIVATE_ADDRESS,
+                    );
+
+                    transactions_hashes.push(founder_transaction.hash());
+
+                    // get sorted transactions
+                    let mut transactions: Vec<_> = trxs_pool.pool.iter().collect();
+                    transactions.sort();
+                    transactions_hashes.extend(transactions.iter().map(|tr| tr.hash()));
+
+                    drop(transactions); // drop cuz not needed anymore
+
+                    // construct new block from new_block data
+                    let mut constructed_block = TransactionBlock::new(
+                        transactions_hashes,
+                        fee,
+                        BasicInfo::new(
+                            new_block_info.timestamp,
+                            new_block_info.pow,
+                            last_hash,
+                            height,
+                            *difficulty,
+                            new_block_info.founder,
+                        ),
+                        new_block.get_merkle_root(),
+                    );
+
+                    // verify transactions
+                    if !constructed_block.check_merkle_tree().map_err(|e| {
+                        e.change_context(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    })? {
+                        return Ok(false);
+                    }
+
+                    // all checks passed, proceed to add block
+                    if decrease_root_funds {
+                        self.decrease_funds(&ROOT_PUBLIC_ADDRESS, &MAIN_CHAIN_PAYMENT)
+                            .await?;
+                    }
+
+                    self.add_funds(&new_block_info.founder, &founder_transaction_amount)
+                        .await?;
+
+                    self.main_chain
+                        .add_transaction_raw(founder_transaction)
+                        .await?;
+
+                    let transactions: Vec<_> = (0..transactions_amount)
+                        .map(|_| unsafe { trxs_pool.pop().unwrap_unchecked().1 })
+                        .collect();
+
+                    self.main_chain.add_transactions_raw(transactions).await?;
+
+                    self.main_chain.add_block_raw(&constructed_block).await?;
+                }
+
+                self.new_main_chain_difficulty(
+                    new_block.get_info().timestamp,
+                    &mut difficulty,
+                    height,
+                )
+                .await?;
+            }
+            Ordering::Greater => {
+                return Err(Report::new(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToVerify,
+                ))
+                .attach_printable("The block has bigger height, than the current chains height"));
             }
         }
 
-        Ok(block)
+        Ok(true)
     }
 }
