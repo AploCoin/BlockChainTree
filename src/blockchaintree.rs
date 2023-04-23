@@ -1893,7 +1893,7 @@ impl BlockChainTree {
     ) -> Result<(), BlockChainTreeError> {
         // TODO: rewrite the way difficulty calculated
         if *difficulty != MAX_DIFFICULTY {
-            let last_block = self.main_chain.find_by_height((height - 1) as u64).await?;
+            let last_block = self.main_chain.find_by_height(height - 1).await?;
             if let Some(last_block) = last_block {
                 let last_block_timestamp = last_block.get_info().timestamp;
                 match (timestamp - last_block_timestamp).cmp(&600) {
@@ -2119,7 +2119,7 @@ impl BlockChainTree {
                     }
                     let founder_transaction = Transaction::new(
                         ROOT_PUBLIC_ADDRESS,
-                        new_block.get_founder().clone(),
+                        *new_block.get_founder(),
                         new_block.get_info().timestamp,
                         MAIN_CHAIN_PAYMENT.clone(),
                         ROOT_PRIVATE_ADDRESS,
@@ -2131,7 +2131,7 @@ impl BlockChainTree {
                             last_hash,
                             height,
                             *difficulty,
-                            new_block.get_founder().clone(),
+                            *new_block.get_founder(),
                         ),
                         founder_transaction.hash(),
                     );
@@ -2145,7 +2145,7 @@ impl BlockChainTree {
                             .attach_printable("The merkle root is wrong");
                     }
 
-                    self.add_funds(&new_block.get_founder(), &MAIN_CHAIN_PAYMENT)
+                    self.add_funds(new_block.get_founder(), &MAIN_CHAIN_PAYMENT)
                         .await?;
 
                     self.main_chain.add_block_raw(&constructed_block).await?;
@@ -2240,7 +2240,7 @@ impl BlockChainTree {
                 self.new_main_chain_difficulty(
                     new_block.get_info().timestamp,
                     &mut difficulty,
-                    height as u64,
+                    height,
                 )
                 .await?;
             }

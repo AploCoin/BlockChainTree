@@ -136,7 +136,7 @@ pub fn check_pow(prev_hash: &[u8; 32], difficulty: &[u8; 32], pow: &BigUint) -> 
     //println!("difficulty: {:?}", difficulty);
 
     for (r, d) in result.iter().zip(difficulty) {
-        match r.cmp(&d) {
+        match r.cmp(d) {
             std::cmp::Ordering::Less => {
                 return true;
             }
