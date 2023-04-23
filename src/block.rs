@@ -1,3 +1,6 @@
+use crate::blockchaintree::{
+    BEGINNING_DIFFICULTY, GENESIS_BLOCK, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS,
+};
 use crate::dump_headers::Headers;
 use crate::errors::*;
 use crate::merkletree::MerkleTree;
@@ -5,6 +8,7 @@ use crate::tools;
 use crate::transaction::{Transaction, Transactionable};
 use byteorder::{BigEndian, ReadBytesExt};
 use num_bigint::BigUint;
+use num_traits::FromPrimitive;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::mem::transmute;
@@ -29,6 +33,7 @@ pub struct BasicInfo {
     pub previous_hash: [u8; 32],
     pub height: u64,
     pub difficulty: [u8; 32],
+    pub founder: [u8; 33],
 }
 
 impl BasicInfo {
@@ -38,6 +43,7 @@ impl BasicInfo {
         previous_hash: [u8; 32],
         height: u64,
         difficulty: [u8; 32],
+        founder: [u8; 33],
     ) -> BasicInfo {
         BasicInfo {
             timestamp,
@@ -45,11 +51,12 @@ impl BasicInfo {
             previous_hash,
             height,
             difficulty,
+            founder,
         }
     }
 
     pub fn get_dump_size(&self) -> usize {
-        8 + tools::bigint_size(&self.pow) + 32 + 32 + 8
+        8 + tools::bigint_size(&self.pow) + 32 + 32 + 8 + 33
     }
     pub fn dump(&self, buffer: &mut Vec<u8>) -> Result<(), BlockError> {
         // dumping timestamp
@@ -70,6 +77,9 @@ impl BasicInfo {
         // dumping difficulty
         buffer.extend(self.difficulty);
 
+        // dumping founder
+        buffer.extend(self.founder);
+
         // dumping PoW
         tools::dump_biguint(&self.pow, buffer)
             .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Dump))?;
@@ -80,10 +90,10 @@ impl BasicInfo {
     pub fn parse(data: &[u8]) -> Result<BasicInfo, BlockError> {
         let mut index: usize = 0;
 
-        if data.len() <= 112 {
+        if data.len() <= 113 {
             return Err(
                 Report::new(BlockError::BasicInfo(BasicInfoErrorKind::Parse))
-                    .attach_printable("data <= 112"),
+                    .attach_printable("data <= 113"),
             );
         }
 
@@ -104,6 +114,10 @@ impl BasicInfo {
         let difficulty: [u8; 32] = unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
 
+        //parsing founder
+        let founder: [u8; 33] = unsafe { data[index..index + 33].try_into().unwrap_unchecked() };
+        index += 33;
+
         // parsing PoW
         let (pow, _) = tools::load_biguint(&data[index..])
             .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Parse))
@@ -113,16 +127,16 @@ impl BasicInfo {
             timestamp,
             pow,
             previous_hash,
-            //current_hash,
             height,
             difficulty,
+            founder,
         })
     }
 }
 
 #[derive(Debug)]
 pub struct TransactionBlock {
-    transactions: Vec<[u8; 32]>,
+    transactions: Arc<Vec<[u8; 32]>>,
     fee: BigUint,
     merkle_tree: Option<MerkleTree>,
     merkle_tree_root: [u8; 32],
@@ -137,7 +151,7 @@ impl TransactionBlock {
         merkle_tree_root: [u8; 32],
     ) -> TransactionBlock {
         TransactionBlock {
-            transactions,
+            transactions: Arc::new(transactions),
             fee,
             merkle_tree: None,
             default_info,
@@ -264,7 +278,7 @@ impl TransactionBlock {
             .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))?;
 
         // transactions hashes
-        for hash in &self.transactions {
+        for hash in self.transactions.iter() {
             to_return.extend(hash);
         }
 
@@ -301,7 +315,7 @@ impl TransactionBlock {
             .collect();
 
         Ok(TransactionBlock {
-            transactions,
+            transactions: Arc::new(transactions),
             fee,
             merkle_tree: None,
             merkle_tree_root,
@@ -415,6 +429,18 @@ impl MainChainBlock for TransactionBlock {
 
     fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
         self.default_info.previous_hash.eq(prev_hash)
+    }
+
+    fn get_transactions(&self) -> Arc<Vec<[u8; 32]>> {
+        self.transactions.clone()
+    }
+
+    fn get_founder(&self) -> &[u8; 33] {
+        &self.default_info.founder
+    }
+
+    fn get_fee(&self) -> BigUint {
+        self.fee.clone()
     }
 }
 
@@ -625,6 +651,18 @@ impl MainChainBlock for SummarizeBlock {
     fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
         self.default_info.previous_hash.eq(prev_hash)
     }
+
+    fn get_transactions(&self) -> Arc<Vec<[u8; 32]>> {
+        Arc::new(vec![self.founder_transaction])
+    }
+
+    fn get_founder(&self) -> &[u8; 33] {
+        &self.default_info.founder
+    }
+
+    fn get_fee(&self) -> BigUint {
+        0usize.into()
+    }
 }
 
 /// Deserializes block's dump into MainChainBlockBox
@@ -653,6 +691,54 @@ pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockBox, Bl
     Ok(block)
 }
 
+/// Abstract representaion of genesis block
+pub struct GenesisBlock {}
+
+impl MainChainBlock for GenesisBlock {
+    fn hash(&self) -> Result<[u8; 32], BlockError> {
+        Ok(GENESIS_BLOCK)
+    }
+
+    fn get_dump_size(&self) -> usize {
+        unimplemented!() // not really needed
+    }
+
+    fn dump(&self) -> Result<Vec<u8>, BlockError> {
+        unimplemented!() // not really needed
+    }
+
+    fn get_info(&self) -> BasicInfo {
+        BasicInfo {
+            timestamp: INCEPTION_TIMESTAMP,
+            pow: BigUint::from_u64(0).unwrap(),
+            previous_hash: [0; 32],
+            height: 0,
+            difficulty: BEGINNING_DIFFICULTY,
+            founder: ROOT_PUBLIC_ADDRESS,
+        }
+    }
+
+    fn get_merkle_root(&self) -> [u8; 32] {
+        [0; 32]
+    }
+
+    fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
+        GENESIS_BLOCK.eq(prev_hash)
+    }
+
+    fn get_transactions(&self) -> Arc<Vec<[u8; 32]>> {
+        Arc::new(Vec::with_capacity(0))
+    }
+
+    fn get_founder(&self) -> &[u8; 33] {
+        &ROOT_PUBLIC_ADDRESS
+    }
+
+    fn get_fee(&self) -> BigUint {
+        0usize.into()
+    }
+}
+
 pub trait MainChainBlock {
     fn hash(&self) -> Result<[u8; 32], BlockError>;
     fn get_dump_size(&self) -> usize;
@@ -660,6 +746,9 @@ pub trait MainChainBlock {
     fn get_info(&self) -> BasicInfo;
     fn get_merkle_root(&self) -> [u8; 32];
     fn verify_block(&self, prev_hash: &[u8; 32]) -> bool;
+    fn get_transactions(&self) -> Arc<Vec<[u8; 32]>>;
+    fn get_founder(&self) -> &[u8; 33];
+    fn get_fee(&self) -> BigUint;
 }
 
 pub type MainChainBlockBox = Box<dyn MainChainBlock + Send + Sync>;

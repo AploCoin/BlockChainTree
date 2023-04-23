@@ -124,14 +124,16 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
     Ok(decoded_data)
 }
 
-pub fn check_pow(prev_hash: [u8; 32], difficulty: [u8; 32], pow: &BigUint) -> bool {
+pub fn check_pow(prev_hash: &[u8; 32], difficulty: &[u8; 32], pow: &BigUint) -> bool {
     let mut hasher = Sha256::new();
     hasher.update(prev_hash);
     hasher.update(pow.to_bytes_be());
     let result: [u8; 32] = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
     let result: [u64; 4] = unsafe { transmute(result) };
 
-    let difficulty: [u64; 4] = unsafe { transmute(difficulty) };
+    let difficulty: &[u64; 4] = unsafe { transmute(difficulty) };
+
+    //println!("difficulty: {:?}", difficulty);
 
     for (r, d) in result.iter().zip(difficulty) {
         match r.cmp(&d) {
@@ -139,9 +141,11 @@ pub fn check_pow(prev_hash: [u8; 32], difficulty: [u8; 32], pow: &BigUint) -> bo
                 return true;
             }
             std::cmp::Ordering::Equal => {}
-            std::cmp::Ordering::Greater => break,
+            std::cmp::Ordering::Greater => {
+                return false;
+            }
         }
     }
 
-    false
+    true
 }
