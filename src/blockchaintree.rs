@@ -214,11 +214,57 @@ impl Chain {
         })
     }
 
+    /// Overwrite block with same height
+    ///
+    /// Adds a block to db under it's height
+    ///
+    /// Removes higher blocks references and removes associated transactions
+    pub async fn block_overwrite(
+        &self,
+        block: &impl MainChainBlock,
+    ) -> Result<(), BlockChainTreeError> {
+        let mut height = self.height.write().await;
+        let dump = block
+            .dump()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        let hash = tools::hash(&dump);
+
+        let height_block = block.get_info().height;
+        let height_bytes = height.to_be_bytes();
+
+        self.db
+            .insert(height_bytes, dump)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        self.height_reference
+            .insert(hash, &height_bytes)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        *height = height_block;
+
+        self.db
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        Ok(())
+    }
+
     /// Adds new block to the chain db, raw API function
     ///
     /// Adds block and sets heigh reference for it
     ///
-    /// Doesn't check for blocks validity, just adds it directly to database
+    /// Doesn't check for blocks validity, just adds it directly to the end of the chain
     pub async fn add_block_raw(
         &self,
         block: &impl MainChainBlock,
@@ -2253,5 +2299,85 @@ impl BlockChainTree {
         }
 
         Ok(true)
+    }
+
+    /// Overwrites the block with same heigh if it existed
+    ///
+    /// also removes all higher blocks, linked transactions and derivative chains
+    ///
+    /// clears transactions pool
+    pub async fn overwrite_main_chain_block(
+        &self,
+        new_block: &MainChainBlockArc,
+    ) -> Result<(), BlockChainTreeError> {
+        let mut difficulty = self.main_chain.difficulty.write().await;
+        let mut trxs_pool = self.trxs_pool.write().await;
+
+        let new_block_height = new_block.get_info().height;
+        let new_block_hash = new_block.hash().change_context(BlockChainTreeError::Chain(
+            ChainErrorKind::FailedToHashBlock,
+        ))?;
+
+        if new_block_height == 0 {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Tried to add block with height 0"),
+            );
+        }
+
+        let current_block = match self.main_chain.find_by_height(new_block_height).await? {
+            Some(block) => block,
+            None => {
+                return Err(Report::new(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToVerify,
+                )));
+            }
+        };
+        let current_block_hash =
+            current_block
+                .hash()
+                .change_context(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToHashBlock,
+                ))?;
+
+        if current_block_hash == new_block_hash {
+            return Ok(());
+        }
+
+        let prev_block = match self.main_chain.find_by_height(new_block_height - 1).await? {
+            Some(block) => block,
+            None => {
+                return Err(Report::new(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToVerify,
+                )));
+            }
+        };
+        let prev_block_hash = prev_block
+            .hash()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToHashBlock,
+            ))?;
+
+        if !new_block.verify_block(&prev_block.hash().change_context(
+            BlockChainTreeError::Chain(ChainErrorKind::FailedToHashBlock),
+        )?) {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Wrong previous hash"),
+            );
+        }
+
+        if !check_pow(
+            &prev_block_hash,
+            &current_block.get_info().difficulty,
+            &new_block.get_info().pow,
+        ) {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Bad POW"),
+            );
+        }
+
+        Ok(())
     }
 }
