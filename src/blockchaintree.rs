@@ -214,16 +214,117 @@ impl Chain {
         })
     }
 
+    /// Remove heigh reference for supplied hash
+    async fn remove_height_reference(&self, hash: &[u8; 32]) -> Result<(), BlockChainTreeError> {
+        self.height_reference
+            .remove(hash)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToRemoveHeighReference,
+            ))
+            .attach_printable("Hash: {hash:?}")?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToRemoveHeighReference,
+            ))
+            .attach_printable("Hash: {hash:?}")?;
+
+        Ok(())
+    }
+
+    /// Remove all transactions for supplied transactions hashes
+    ///
+    /// fee should be same for the supplied transactions
+    ///
+    /// will update amounts in summary db
+    async fn remove_transactions(
+        &self,
+        transactions: &[[u8; 32]],
+        fee: BigUint,
+        summary_db: &Db,
+    ) -> Result<(), BlockChainTreeError> {
+        for transaction_hash in transactions {
+            let transaction_dump = self
+                .transactions
+                .remove(transaction_hash)
+                .into_report()
+                .change_context(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToRemoveTransaction,
+                ))
+                .attach_printable(format!("Hash: {transaction_hash:?}"))?
+                .ok_or(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToRemoveTransaction,
+                ))
+                .into_report()
+                .attach_printable(format!("Transaction with hash: {transaction_hash:?}"))?;
+
+            // TODO: rewrite transaction parsing
+            let transaction =
+                Transaction::parse(&transaction_dump[1..], (transaction_dump.len() - 1) as u64)
+                    .change_context(BlockChainTreeError::Chain(
+                        ChainErrorKind::FailedToRemoveTransaction,
+                    ))
+                    .attach_printable(format!(
+                        "Error parsing transaction with hash: {transaction_hash:?}"
+                    ))?;
+        }
+        Ok(())
+    }
+
+    /// Removes blocks references and associated transactions
+    ///
+    /// end_height > start_height
+    ///
+    /// removes all blocks from start_height to end_height
+    ///
+    /// utilizes remove_height_reference() and remove_transactions()
+    pub async fn remove_blocks(
+        &self,
+        start_height: u64,
+        end_height: u64,
+        summary_db: &Db,
+    ) -> Result<(), BlockChainTreeError> {
+        for height in start_height..end_height {
+            let block = self.find_by_height(height).await?.unwrap(); // fatal error
+
+            let hash = block.hash().change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToHashBlock,
+            ))?;
+
+            self.remove_height_reference(&hash).await.unwrap(); // fatal error
+            self.remove_transactions(
+                block.get_transactions().as_slice(),
+                block.get_fee(),
+                summary_db,
+            )
+            .await
+            .unwrap(); // fatal error
+        }
+        Ok(())
+    }
+
     /// Overwrite block with same height
     ///
     /// Adds a block to db under it's height
     ///
     /// Removes higher blocks references and removes associated transactions
+    ///
+    /// uses remove_blocks() to remove higher blocks and transactions
+    ///
+    /// sets current height to the block's height + 1
+    ///
+    /// Doesn't change difficulty
     pub async fn block_overwrite(
         &self,
         block: &impl MainChainBlock,
+        summary_db: Db,
     ) -> Result<(), BlockChainTreeError> {
         let mut height = self.height.write().await;
+
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
@@ -232,6 +333,9 @@ impl Chain {
 
         let height_block = block.get_info().height;
         let height_bytes = height.to_be_bytes();
+
+        self.remove_blocks(height_block, *height, &summary_db)
+            .await?;
 
         self.db
             .insert(height_bytes, dump)
@@ -243,7 +347,7 @@ impl Chain {
             .into_report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
 
-        *height = height_block;
+        *height = height_block + 1;
 
         self.db
             .flush_async()
@@ -1931,6 +2035,7 @@ impl BlockChainTree {
         Ok(block)
     }
 
+    /// Set new difficulty for the chain
     pub async fn new_main_chain_difficulty(
         &self,
         timestamp: u64,
