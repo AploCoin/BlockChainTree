@@ -147,7 +147,9 @@ sub_errors![
         InitWithoutConfig: "failed to create a new chain without config",
         FindTransaction: "failed to find transaction",
         FailedToVerify: "failed to verify block",
-        FailedToHashBlock: "failed to hash block"
+        FailedToHashBlock: "failed to hash block",
+        FailedToRemoveHeighReference: "failed to remove height reference",
+        FailedToRemoveTransaction: "failed to remove transaction"
     },
     DerivChainErrorKind {
         Init: "failed to create a new derivative chain",
