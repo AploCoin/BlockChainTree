@@ -82,7 +82,7 @@ impl SummaryDB {
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::DecreaseFunds,
                     ))
-                    .attach_printable(format!("failed to put funds at address: {:X?}", addr))?;
+                    .attach_printable(format!("failed to put funds at address: {addr:X?}"))?;
 
                 self.db
                     .flush_async()
@@ -92,8 +92,7 @@ impl SummaryDB {
                         BCTreeErrorKind::AddFunds,
                     ))
                     .attach_printable(format!(
-                        "failed to create and add funds at address: {:X?}",
-                        addr
+                        "failed to create and add funds at address: {addr:X?}"
                     ))?;
 
                 Ok(())

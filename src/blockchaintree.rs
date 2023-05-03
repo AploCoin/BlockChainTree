@@ -351,7 +351,7 @@ impl Chain {
         let height_block = block.get_info().height;
         let height_bytes = height.to_be_bytes();
 
-        self.remove_blocks(height_block, *height, &summary_db)
+        self.remove_blocks(height_block, *height, summary_db)
             .await?;
 
         self.db
@@ -838,7 +838,7 @@ impl Chain {
                     return Err(Report::new(BlockChainTreeError::Chain(
                         ChainErrorKind::FindByHeight,
                     ))
-                    .attach_printable(format!("Block height: {:?}", i)))
+                    .attach_printable(format!("Block height: {i:?}")))
                 }
                 Some(block) => block,
             };
@@ -1796,7 +1796,7 @@ impl BlockChainTree {
 
         let amount = transaction.get_amount();
 
-        if amount <= &fee {
+        if amount <= fee {
             return Err(Report::new(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))
