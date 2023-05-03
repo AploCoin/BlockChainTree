@@ -1725,6 +1725,22 @@ impl BlockChainTree {
             .attach_printable("Transaction with same hash found"));
         }
 
+        if !tr
+            .verify()
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable(format!(
+                "Unable to verify transaction with hash: {:?}",
+                tr.hash()
+            ))?
+        {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Transaction verification failed"));
+        }
+
         let difficulty = self.main_chain.difficulty.read().await;
         let fee = Chain::calculate_fee(&difficulty);
         drop(difficulty);
@@ -2229,16 +2245,20 @@ impl BlockChainTree {
                     self.add_funds(&new_block_info.founder, &founder_transaction_amount)
                         .await?;
 
+                    // add founder transaction
                     self.main_chain
                         .add_transaction_raw(founder_transaction)
                         .await?;
 
+                    // gather transactions from the pool
                     let transactions: Vec<_> = (0..transactions_amount)
                         .map(|_| unsafe { trxs_pool.pop().unwrap_unchecked().1 })
                         .collect();
 
+                    // add transactions from the pool
                     self.main_chain.add_transactions_raw(transactions).await?;
 
+                    // add block
                     self.main_chain.add_block_raw(&constructed_block).await?;
                 }
 
