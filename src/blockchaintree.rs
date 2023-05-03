@@ -12,10 +12,11 @@ use std::collections::binary_heap::Iter;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryInto;
 
+use crate::summary_db::SummaryDB;
+
 use crate::dump_headers::Headers;
 use hex::ToHex;
 use lazy_static::lazy_static;
-use num_traits::Zero;
 use sled::Db;
 use std::fs;
 use std::fs::File;
@@ -214,11 +215,177 @@ impl Chain {
         })
     }
 
+    /// Remove heigh reference for supplied hash
+    async fn remove_height_reference(&self, hash: &[u8; 32]) -> Result<(), BlockChainTreeError> {
+        self.height_reference
+            .remove(hash)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToRemoveHeighReference,
+            ))
+            .attach_printable("Hash: {hash:?}")?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToRemoveHeighReference,
+            ))
+            .attach_printable("Hash: {hash:?}")?;
+
+        Ok(())
+    }
+
+    /// Remove all transactions for supplied transactions hashes
+    ///
+    /// fee should be same for the supplied transactions
+    ///
+    /// Transactions should be rotated newer - older
+    ///
+    /// will update amounts in summary db
+    async fn remove_transactions<'a, I>(
+        &self,
+        transactions: I,
+        fee: BigUint,
+        summary_db: &SummaryDB,
+    ) -> Result<(), BlockChainTreeError>
+    where
+        I: Iterator<Item = &'a [u8; 32]>,
+    {
+        for transaction_hash in transactions {
+            let transaction_dump = self
+                .transactions
+                .remove(transaction_hash)
+                .into_report()
+                .change_context(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToRemoveTransaction,
+                ))
+                .attach_printable(format!("Hash: {transaction_hash:?}"))?
+                .ok_or(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToRemoveTransaction,
+                ))
+                .into_report()
+                .attach_printable(format!("Transaction with hash: {transaction_hash:?}"))?;
+
+            // TODO: rewrite transaction parsing
+            let transaction =
+                Transaction::parse(&transaction_dump[1..], (transaction_dump.len() - 1) as u64)
+                    .change_context(BlockChainTreeError::Chain(
+                        ChainErrorKind::FailedToRemoveTransaction,
+                    ))
+                    .attach_printable(format!(
+                        "Error parsing transaction with hash: {transaction_hash:?}"
+                    ))?;
+
+            summary_db
+                .add_funds(transaction.get_sender(), transaction.get_amount())
+                .await?;
+            summary_db
+                .decrease_funds(
+                    transaction.get_receiver(),
+                    &(transaction.get_amount() - &fee),
+                )
+                .await?;
+        }
+        Ok(())
+    }
+
+    /// Removes blocks references and associated transactions
+    ///
+    /// end_height > start_height
+    ///
+    /// removes all blocks from start_height to end_height
+    ///
+    /// utilizes remove_height_reference() and remove_transactions()
+    pub async fn remove_blocks(
+        &self,
+        start_height: u64,
+        end_height: u64,
+        summary_db: &SummaryDB,
+    ) -> Result<(), BlockChainTreeError> {
+        for height in end_height - 1..start_height {
+            let block = self.find_by_height(height).await?.unwrap(); // fatal error
+
+            let hash = block.hash().change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToHashBlock,
+            ))?;
+
+            self.remove_height_reference(&hash).await.unwrap(); // fatal error
+
+            self.remove_transactions(
+                block.get_transactions().iter().rev(),
+                block.get_fee(),
+                summary_db,
+            )
+            .await
+            .unwrap(); // fatal error
+        }
+        Ok(())
+    }
+
+    /// Overwrite block with same height
+    ///
+    /// Adds a block to db under it's height
+    ///
+    /// Removes higher blocks references and removes associated transactions
+    ///
+    /// uses remove_blocks() to remove higher blocks and transactions
+    ///
+    /// sets current height to the block's height + 1
+    ///
+    /// Doesn't change difficulty
+    pub async fn block_overwrite(
+        &self,
+        block: &MainChainBlockArc,
+        summary_db: &SummaryDB,
+    ) -> Result<(), BlockChainTreeError> {
+        let mut height = self.height.write().await;
+
+        let dump = block
+            .dump()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        let hash = tools::hash(&dump);
+
+        let height_block = block.get_info().height;
+        let height_bytes = height.to_be_bytes();
+
+        self.remove_blocks(height_block, *height, summary_db)
+            .await?;
+
+        self.db
+            .insert(height_bytes, dump)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        self.height_reference
+            .insert(hash, &height_bytes)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        *height = height_block + 1;
+
+        self.db
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+        Ok(())
+    }
+
     /// Adds new block to the chain db, raw API function
     ///
     /// Adds block and sets heigh reference for it
     ///
-    /// Doesn't check for blocks validity, just adds it directly to database
+    /// Doesn't check for blocks validity, just adds it directly to the end of the chain
     pub async fn add_block_raw(
         &self,
         block: &impl MainChainBlock,
@@ -268,7 +435,7 @@ impl Chain {
     /// Doesn't validate transaction
     pub async fn add_transaction_raw(
         &self,
-        transaction: impl Transactionable,
+        transaction: &impl Transactionable,
     ) -> Result<(), BlockChainTreeError> {
         self.transactions
             .insert(
@@ -671,7 +838,7 @@ impl Chain {
                     return Err(Report::new(BlockChainTreeError::Chain(
                         ChainErrorKind::FindByHeight,
                     ))
-                    .attach_printable(format!("Block height: {:?}", i)))
+                    .attach_printable(format!("Block height: {i:?}")))
                 }
                 Some(block) => block,
             };
@@ -993,8 +1160,8 @@ impl DerivativeChain {
 #[derive(Clone)]
 pub struct BlockChainTree {
     trxs_pool: Arc<RwLock<TransactionsPool>>,
-    summary_db: Arc<RwLock<Db>>,
-    old_summary_db: Arc<RwLock<Db>>,
+    summary_db: Arc<RwLock<SummaryDB>>,
+    old_summary_db: Arc<RwLock<SummaryDB>>,
     main_chain: Arc<Chain>,
     deratives: Derivatives,
 }
@@ -1081,9 +1248,9 @@ impl BlockChainTree {
 
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
-            summary_db: Arc::new(RwLock::new(summary_db)),
+            summary_db: Arc::new(RwLock::new(SummaryDB::new(summary_db))),
             main_chain: Arc::new(main_chain),
-            old_summary_db: Arc::new(RwLock::new(old_summary_db)),
+            old_summary_db: Arc::new(RwLock::new(SummaryDB::new(old_summary_db))),
             deratives: Arc::default(),
         })
     }
@@ -1158,9 +1325,9 @@ impl BlockChainTree {
 
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
-            summary_db: Arc::new(RwLock::new(summary_db)),
+            summary_db: Arc::new(RwLock::new(SummaryDB::new(summary_db))),
             main_chain: Arc::new(main_chain),
-            old_summary_db: Arc::new(RwLock::new(old_summary_db)),
+            old_summary_db: Arc::new(RwLock::new(SummaryDB::new(old_summary_db))),
             deratives: Arc::default(),
         })
     }
@@ -1423,88 +1590,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        if funds.is_zero() {
-            return Ok(());
-        }
-        let result = self.summary_db.as_ref().read().await.get(addr);
-        match result {
-            Ok(None) => {
-                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(funds));
-                tools::dump_biguint(funds, &mut dump).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
-                )?;
-
-                let db = self.summary_db.read().await;
-
-                db.insert(addr, dump)
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                db.flush_async()
-                    .await
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                Ok(())
-            }
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
-                )?;
-
-                let mut previous = res.0;
-                previous += funds;
-
-                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&previous));
-                tools::dump_biguint(&previous, &mut dump).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
-                )?;
-
-                let db = self.summary_db.read().await;
-
-                db.insert(addr, dump)
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to put funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                db.flush_async()
-                    .await
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                Ok(())
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::AddFunds,
-            ))
-            .attach_printable(format!(
-                "failed to get data from address: {}",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-        }
+        self.summary_db.write().await.add_funds(addr, funds).await
     }
 
     /// Decrease funds
@@ -1515,107 +1601,25 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        let db = self.summary_db.read().await;
-
-        let result = db.get(addr);
-        match result {
-            Ok(None) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::DecreaseFunds,
-            ))
-            .attach_printable(format!(
-                "address: {} doesn't have any coins",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DecreaseFunds),
-                )?;
-
-                let mut previous = res.0;
-                if previous < *funds {
-                    return Err(Report::new(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::DecreaseFunds,
-                    ))
-                    .attach_printable("insufficient balance"));
-                }
-                previous -= funds;
-
-                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&previous));
-                tools::dump_biguint(&previous, &mut dump).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DecreaseFunds),
-                )?;
-
-                db.insert(addr, dump)
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::DecreaseFunds,
-                    ))
-                    .attach_printable(format!("failed to put funds at address: {:X?}", addr))?;
-
-                db.flush_async()
-                    .await
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {:X?}",
-                        addr
-                    ))?;
-
-                Ok(())
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::DecreaseFunds,
-            ))
-            .attach_printable(format!(
-                "failed to get data from address: {}",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-        }
+        self.summary_db
+            .write()
+            .await
+            .decrease_funds(addr, funds)
+            .await
     }
 
     /// Get funds
     ///
     /// Gets funds for specified address from summary db
     pub async fn get_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        match self.summary_db.read().await.get(addr) {
-            Ok(None) => Ok(Zero::zero()),
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetFunds),
-                )?;
-
-                let previous = res.0;
-                Ok(previous)
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::GetDerivChain,
-            ))
-            .attach_printable(format!(
-                "failed to get data from summary db at address: {}",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-        }
+        self.summary_db.read().await.get_funds(addr)
     }
 
     /// Get old funds
     ///
     /// Gets old funds for specified address from previous summary db
     pub async fn get_old_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        match self.old_summary_db.read().await.get(addr) {
-            Ok(None) => Ok(Zero::zero()),
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetOldFunds),
-                )?;
-                let previous = res.0;
-                Ok(previous)
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::GetOldFunds,
-            ))),
-        }
+        self.old_summary_db.read().await.get_funds(addr)
     }
 
     /// Move current summary database to old database
@@ -1699,7 +1703,7 @@ impl BlockChainTree {
     ///
     /// Adds new transaction to the transaction pool
     ///
-    /// If trxs_pool.len() < MAX_TRANSACTIONS_PER_BLOCK and it's not the last block of epoch transaction will be immediately processed
+    /// If it's not the last block of epoch transaction will be immediately processed
     ///
     /// If transaction with same hash exists will return error
     pub async fn new_transaction(&self, tr: Transaction) -> Result<(), BlockChainTreeError> {
@@ -1719,6 +1723,22 @@ impl BlockChainTree {
                 BCTreeErrorKind::NewTransaction,
             ))
             .attach_printable("Transaction with same hash found"));
+        }
+
+        if !tr
+            .verify()
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable(format!(
+                "Unable to verify transaction with hash: {:?}",
+                tr.hash()
+            ))?
+        {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Transaction verification failed"));
         }
 
         let difficulty = self.main_chain.difficulty.read().await;
@@ -1747,6 +1767,55 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))?;
+
+        Ok(())
+    }
+
+    /// Add transaction directly to the chain
+    ///
+    /// sets amounts in summarize db
+    async fn add_transaction(
+        &self,
+        transaction: &Transaction,
+        fee: &BigUint,
+    ) -> Result<(), BlockChainTreeError> {
+        let tr_hash = transaction.hash();
+        if self
+            .get_main_chain()
+            .transaction_exists(&tr_hash)
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?
+        {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Transaction with same hash found"));
+        }
+
+        let amount = transaction.get_amount();
+
+        if amount <= fee {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Amount sent in transaction is smaller, than the fee"));
+        }
+
+        self.decrease_funds(transaction.get_sender(), amount)
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?;
+
+        self.add_funds(transaction.get_sender(), &(amount - fee))
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?;
+
+        self.main_chain.add_transaction_raw(transaction).await?;
 
         Ok(())
     }
@@ -1879,12 +1948,15 @@ impl BlockChainTree {
 
         self.main_chain.add_block_raw(&block).await?;
         self.main_chain
-            .add_transaction_raw(founder_transaction)
+            .add_transaction_raw(&founder_transaction)
             .await?;
 
         Ok(block)
     }
 
+    /// Set new difficulty for the chain
+    ///
+    /// height - curent chains height, last block's height
     pub async fn new_main_chain_difficulty(
         &self,
         timestamp: u64,
@@ -1955,8 +2027,8 @@ impl BlockChainTree {
 
                 let (summary_db, old_summary_db) = self.move_summary_database()?;
 
-                *summary_db_lock = summary_db;
-                *old_summary_db_lock = old_summary_db;
+                *summary_db_lock = SummaryDB::new(summary_db);
+                *old_summary_db_lock = SummaryDB::new(old_summary_db);
 
                 Box::new(block)
             } else {
@@ -2150,7 +2222,7 @@ impl BlockChainTree {
 
                     self.main_chain.add_block_raw(&constructed_block).await?;
                     self.main_chain
-                        .add_transaction_raw(founder_transaction)
+                        .add_transaction_raw(&founder_transaction)
                         .await?;
                 } else {
                     let transactions_amount = trxs_pool.len();
@@ -2188,7 +2260,7 @@ impl BlockChainTree {
 
                     // get sorted transactions
                     let mut transactions: Vec<_> = trxs_pool.pool.iter().collect();
-                    transactions.sort();
+                    transactions.sort_by(|a, b| b.cmp(a));
                     transactions_hashes.extend(transactions.iter().map(|tr| tr.hash()));
 
                     drop(transactions); // drop cuz not needed anymore
@@ -2224,16 +2296,20 @@ impl BlockChainTree {
                     self.add_funds(&new_block_info.founder, &founder_transaction_amount)
                         .await?;
 
+                    // add founder transaction
                     self.main_chain
-                        .add_transaction_raw(founder_transaction)
+                        .add_transaction_raw(&founder_transaction)
                         .await?;
 
+                    // gather transactions from the pool
                     let transactions: Vec<_> = (0..transactions_amount)
                         .map(|_| unsafe { trxs_pool.pop().unwrap_unchecked().1 })
                         .collect();
 
+                    // add transactions from the pool
                     self.main_chain.add_transactions_raw(transactions).await?;
 
+                    // add block
                     self.main_chain.add_block_raw(&constructed_block).await?;
                 }
 
@@ -2253,5 +2329,148 @@ impl BlockChainTree {
         }
 
         Ok(true)
+    }
+
+    /// Overwrites the block with same heigh if it existed
+    ///
+    /// also removes all higher blocks, linked transactions and derivative chains
+    ///
+    /// clears transactions pool
+    ///
+    /// transactions should be sorted and verify beforehand
+    pub async fn overwrite_main_chain_block(
+        &self,
+        new_block: &MainChainBlockArc,
+        transactions: &[Transaction],
+    ) -> Result<(), BlockChainTreeError> {
+        let mut difficulty = self.main_chain.difficulty.write().await;
+        let mut trxs_pool = self.trxs_pool.write().await;
+
+        let new_block_height = new_block.get_info().height;
+        let new_block_hash = new_block.hash().change_context(BlockChainTreeError::Chain(
+            ChainErrorKind::FailedToHashBlock,
+        ))?;
+
+        if new_block_height == 0 {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Tried to add block with height 0"),
+            );
+        }
+
+        let current_block = match self.main_chain.find_by_height(new_block_height).await? {
+            Some(block) => block,
+            None => {
+                return Err(Report::new(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToVerify,
+                )));
+            }
+        };
+        let current_block_hash =
+            current_block
+                .hash()
+                .change_context(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToHashBlock,
+                ))?;
+
+        if current_block_hash == new_block_hash {
+            return Ok(());
+        }
+
+        let prev_block = match self.main_chain.find_by_height(new_block_height - 1).await? {
+            Some(block) => block,
+            None => {
+                return Err(Report::new(BlockChainTreeError::Chain(
+                    ChainErrorKind::FailedToVerify,
+                )));
+            }
+        };
+        let prev_block_hash = prev_block
+            .hash()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::FailedToHashBlock,
+            ))?;
+
+        if !new_block.verify_block(&prev_block.hash().change_context(
+            BlockChainTreeError::Chain(ChainErrorKind::FailedToHashBlock),
+        )?) {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Wrong previous hash"),
+            );
+        }
+
+        if !check_pow(
+            &prev_block_hash,
+            &current_block.get_info().difficulty,
+            &new_block.get_info().pow,
+        ) {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("Bad POW"),
+            );
+        }
+
+        let fee = Chain::calculate_fee(&new_block.get_info().difficulty);
+
+        // founder transaction
+        let founder_transaction_amount = (transactions.len() * &fee)
+            + if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= *MAIN_CHAIN_PAYMENT {
+                // if there is enough coins left in the root address make payment transaction
+                self.decrease_funds(&ROOT_PUBLIC_ADDRESS, &MAIN_CHAIN_PAYMENT)
+                    .await?;
+                MAIN_CHAIN_PAYMENT.clone()
+            } else {
+                0usize.into()
+            };
+
+        let founder_transaction = Transaction::new(
+            ROOT_PUBLIC_ADDRESS,
+            *new_block.get_founder(),
+            new_block.get_info().timestamp,
+            founder_transaction_amount,
+            ROOT_PRIVATE_ADDRESS,
+        );
+
+        // verify merkle tree
+        let mut transactions_hashes: Vec<[u8; 32]> = Vec::with_capacity(transactions.len() + 1);
+        transactions_hashes.push(founder_transaction.hash());
+        transactions_hashes.extend(transactions.iter().map(|t| t.hash()));
+
+        let mut merkle_tree = MerkleTree::new();
+        merkle_tree.add_objects(&transactions_hashes);
+        let calculated_merkle_tree_root = merkle_tree.get_root();
+
+        if !new_block.get_merkle_root().eq(calculated_merkle_tree_root) {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("The provided in block merkle tree root is not equal to the supplied transactions"),
+            );
+        }
+
+        let summary_db = self.summary_db.read().await;
+        self.main_chain
+            .block_overwrite(new_block, &summary_db)
+            .await?;
+
+        // add transations
+        self.add_transaction(&founder_transaction, &fee).await?;
+
+        for transaction in transactions {
+            self.add_transaction(transaction, &fee).await?;
+        }
+
+        // clear txs pool
+        trxs_pool.pool.clear();
+
+        // recalculate difficulty
+        self.new_main_chain_difficulty(
+            new_block.get_info().timestamp,
+            &mut difficulty,
+            new_block_height,
+        )
+        .await?;
+
+        Ok(())
     }
 }
