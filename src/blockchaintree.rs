@@ -12,10 +12,11 @@ use std::collections::binary_heap::Iter;
 use std::collections::{BinaryHeap, HashMap, HashSet};
 use std::convert::TryInto;
 
+use crate::summary_db::SummaryDB;
+
 use crate::dump_headers::Headers;
 use hex::ToHex;
 use lazy_static::lazy_static;
-use num_traits::Zero;
 use sled::Db;
 use std::fs;
 use std::fs::File;
@@ -240,13 +241,18 @@ impl Chain {
     ///
     /// fee should be same for the supplied transactions
     ///
+    /// Transactions should be rotated newer - older
+    ///
     /// will update amounts in summary db
-    async fn remove_transactions(
+    async fn remove_transactions<'a, I>(
         &self,
-        transactions: &[[u8; 32]],
+        transactions: I,
         fee: BigUint,
-        summary_db: &Db,
-    ) -> Result<(), BlockChainTreeError> {
+        summary_db: &SummaryDB,
+    ) -> Result<(), BlockChainTreeError>
+    where
+        I: Iterator<Item = &'a [u8; 32]>,
+    {
         for transaction_hash in transactions {
             let transaction_dump = self
                 .transactions
@@ -271,6 +277,16 @@ impl Chain {
                     .attach_printable(format!(
                         "Error parsing transaction with hash: {transaction_hash:?}"
                     ))?;
+
+            summary_db
+                .add_funds(transaction.get_sender(), transaction.get_amount())
+                .await?;
+            summary_db
+                .decrease_funds(
+                    transaction.get_receiver(),
+                    &(transaction.get_amount() - &fee),
+                )
+                .await?;
         }
         Ok(())
     }
@@ -286,9 +302,9 @@ impl Chain {
         &self,
         start_height: u64,
         end_height: u64,
-        summary_db: &Db,
+        summary_db: &SummaryDB,
     ) -> Result<(), BlockChainTreeError> {
-        for height in start_height..end_height {
+        for height in end_height - 1..start_height {
             let block = self.find_by_height(height).await?.unwrap(); // fatal error
 
             let hash = block.hash().change_context(BlockChainTreeError::Chain(
@@ -296,8 +312,9 @@ impl Chain {
             ))?;
 
             self.remove_height_reference(&hash).await.unwrap(); // fatal error
+
             self.remove_transactions(
-                block.get_transactions().as_slice(),
+                block.get_transactions().iter().rev(),
                 block.get_fee(),
                 summary_db,
             )
@@ -320,8 +337,8 @@ impl Chain {
     /// Doesn't change difficulty
     pub async fn block_overwrite(
         &self,
-        block: &impl MainChainBlock,
-        summary_db: Db,
+        block: &MainChainBlockArc,
+        summary_db: &SummaryDB,
     ) -> Result<(), BlockChainTreeError> {
         let mut height = self.height.write().await;
 
@@ -1143,8 +1160,8 @@ impl DerivativeChain {
 #[derive(Clone)]
 pub struct BlockChainTree {
     trxs_pool: Arc<RwLock<TransactionsPool>>,
-    summary_db: Arc<RwLock<Db>>,
-    old_summary_db: Arc<RwLock<Db>>,
+    summary_db: Arc<RwLock<SummaryDB>>,
+    old_summary_db: Arc<RwLock<SummaryDB>>,
     main_chain: Arc<Chain>,
     deratives: Derivatives,
 }
@@ -1231,9 +1248,9 @@ impl BlockChainTree {
 
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
-            summary_db: Arc::new(RwLock::new(summary_db)),
+            summary_db: Arc::new(RwLock::new(SummaryDB::new(summary_db))),
             main_chain: Arc::new(main_chain),
-            old_summary_db: Arc::new(RwLock::new(old_summary_db)),
+            old_summary_db: Arc::new(RwLock::new(SummaryDB::new(old_summary_db))),
             deratives: Arc::default(),
         })
     }
@@ -1308,9 +1325,9 @@ impl BlockChainTree {
 
         Ok(BlockChainTree {
             trxs_pool: Arc::new(RwLock::new(trxs_pool)),
-            summary_db: Arc::new(RwLock::new(summary_db)),
+            summary_db: Arc::new(RwLock::new(SummaryDB::new(summary_db))),
             main_chain: Arc::new(main_chain),
-            old_summary_db: Arc::new(RwLock::new(old_summary_db)),
+            old_summary_db: Arc::new(RwLock::new(SummaryDB::new(old_summary_db))),
             deratives: Arc::default(),
         })
     }
@@ -1573,88 +1590,7 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        if funds.is_zero() {
-            return Ok(());
-        }
-        let result = self.summary_db.as_ref().read().await.get(addr);
-        match result {
-            Ok(None) => {
-                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(funds));
-                tools::dump_biguint(funds, &mut dump).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
-                )?;
-
-                let db = self.summary_db.read().await;
-
-                db.insert(addr, dump)
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                db.flush_async()
-                    .await
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                Ok(())
-            }
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
-                )?;
-
-                let mut previous = res.0;
-                previous += funds;
-
-                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&previous));
-                tools::dump_biguint(&previous, &mut dump).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::AddFunds),
-                )?;
-
-                let db = self.summary_db.read().await;
-
-                db.insert(addr, dump)
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to put funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                db.flush_async()
-                    .await
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {}",
-                        std::str::from_utf8(addr).unwrap()
-                    ))?;
-
-                Ok(())
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::AddFunds,
-            ))
-            .attach_printable(format!(
-                "failed to get data from address: {}",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-        }
+        self.summary_db.write().await.add_funds(addr, funds).await
     }
 
     /// Decrease funds
@@ -1665,107 +1601,25 @@ impl BlockChainTree {
         addr: &[u8; 33],
         funds: &BigUint,
     ) -> Result<(), BlockChainTreeError> {
-        let db = self.summary_db.read().await;
-
-        let result = db.get(addr);
-        match result {
-            Ok(None) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::DecreaseFunds,
-            ))
-            .attach_printable(format!(
-                "address: {} doesn't have any coins",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DecreaseFunds),
-                )?;
-
-                let mut previous = res.0;
-                if previous < *funds {
-                    return Err(Report::new(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::DecreaseFunds,
-                    ))
-                    .attach_printable("insufficient balance"));
-                }
-                previous -= funds;
-
-                let mut dump: Vec<u8> = Vec::with_capacity(tools::bigint_size(&previous));
-                tools::dump_biguint(&previous, &mut dump).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DecreaseFunds),
-                )?;
-
-                db.insert(addr, dump)
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::DecreaseFunds,
-                    ))
-                    .attach_printable(format!("failed to put funds at address: {:X?}", addr))?;
-
-                db.flush_async()
-                    .await
-                    .into_report()
-                    .change_context(BlockChainTreeError::BlockChainTree(
-                        BCTreeErrorKind::AddFunds,
-                    ))
-                    .attach_printable(format!(
-                        "failed to create and add funds at address: {:X?}",
-                        addr
-                    ))?;
-
-                Ok(())
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::DecreaseFunds,
-            ))
-            .attach_printable(format!(
-                "failed to get data from address: {}",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-        }
+        self.summary_db
+            .write()
+            .await
+            .decrease_funds(addr, funds)
+            .await
     }
 
     /// Get funds
     ///
     /// Gets funds for specified address from summary db
     pub async fn get_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        match self.summary_db.read().await.get(addr) {
-            Ok(None) => Ok(Zero::zero()),
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetFunds),
-                )?;
-
-                let previous = res.0;
-                Ok(previous)
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::GetDerivChain,
-            ))
-            .attach_printable(format!(
-                "failed to get data from summary db at address: {}",
-                std::str::from_utf8(addr).unwrap()
-            ))),
-        }
+        self.summary_db.read().await.get_funds(addr)
     }
 
     /// Get old funds
     ///
     /// Gets old funds for specified address from previous summary db
     pub async fn get_old_funds(&self, addr: &[u8; 33]) -> Result<BigUint, BlockChainTreeError> {
-        match self.old_summary_db.read().await.get(addr) {
-            Ok(None) => Ok(Zero::zero()),
-            Ok(Some(prev)) => {
-                let res = tools::load_biguint(&prev).change_context(
-                    BlockChainTreeError::BlockChainTree(BCTreeErrorKind::GetOldFunds),
-                )?;
-                let previous = res.0;
-                Ok(previous)
-            }
-            Err(_) => Err(Report::new(BlockChainTreeError::BlockChainTree(
-                BCTreeErrorKind::GetOldFunds,
-            ))),
-        }
+        self.old_summary_db.read().await.get_funds(addr)
     }
 
     /// Move current summary database to old database
@@ -2106,8 +1960,8 @@ impl BlockChainTree {
 
                 let (summary_db, old_summary_db) = self.move_summary_database()?;
 
-                *summary_db_lock = summary_db;
-                *old_summary_db_lock = old_summary_db;
+                *summary_db_lock = SummaryDB::new(summary_db);
+                *old_summary_db_lock = SummaryDB::new(old_summary_db);
 
                 Box::new(block)
             } else {
@@ -2482,6 +2336,13 @@ impl BlockChainTree {
                     .attach_printable("Bad POW"),
             );
         }
+
+        let summary_db = self.summary_db.read().await;
+        self.main_chain
+            .block_overwrite(new_block, &summary_db)
+            .await?;
+
+        // TODO: add trransations
 
         Ok(())
     }
