@@ -2193,8 +2193,7 @@ impl BlockChainTree {
 
                     // get sorted transactions
                     let mut transactions: Vec<_> = trxs_pool.pool.iter().collect();
-                    transactions.sort();
-                    transactions.reverse();
+                    transactions.sort_by(|a, b| b.cmp(a));
                     transactions_hashes.extend(transactions.iter().map(|tr| tr.hash()));
 
                     drop(transactions); // drop cuz not needed anymore
