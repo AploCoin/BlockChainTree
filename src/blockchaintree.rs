@@ -435,7 +435,7 @@ impl Chain {
     /// Doesn't validate transaction
     pub async fn add_transaction_raw(
         &self,
-        transaction: impl Transactionable,
+        transaction: &impl Transactionable,
     ) -> Result<(), BlockChainTreeError> {
         self.transactions
             .insert(
@@ -1703,7 +1703,7 @@ impl BlockChainTree {
     ///
     /// Adds new transaction to the transaction pool
     ///
-    /// If trxs_pool.len() < MAX_TRANSACTIONS_PER_BLOCK and it's not the last block of epoch transaction will be immediately processed
+    /// If it's not the last block of epoch transaction will be immediately processed
     ///
     /// If transaction with same hash exists will return error
     pub async fn new_transaction(&self, tr: Transaction) -> Result<(), BlockChainTreeError> {
@@ -1767,6 +1767,55 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))?;
+
+        Ok(())
+    }
+
+    /// Add transaction directly to the chain
+    ///
+    /// sets amounts in summarize db
+    async fn add_transaction(
+        &self,
+        transaction: &Transaction,
+        fee: &BigUint,
+    ) -> Result<(), BlockChainTreeError> {
+        let tr_hash = transaction.hash();
+        if self
+            .get_main_chain()
+            .transaction_exists(&tr_hash)
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?
+        {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Transaction with same hash found"));
+        }
+
+        let amount = transaction.get_amount();
+
+        if amount <= &fee {
+            return Err(Report::new(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("Amount sent in transaction is smaller, than the fee"));
+        }
+
+        self.decrease_funds(transaction.get_sender(), amount)
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?;
+
+        self.add_funds(transaction.get_sender(), &(amount - fee))
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))?;
+
+        self.main_chain.add_transaction_raw(transaction).await?;
 
         Ok(())
     }
@@ -1899,13 +1948,15 @@ impl BlockChainTree {
 
         self.main_chain.add_block_raw(&block).await?;
         self.main_chain
-            .add_transaction_raw(founder_transaction)
+            .add_transaction_raw(&founder_transaction)
             .await?;
 
         Ok(block)
     }
 
     /// Set new difficulty for the chain
+    ///
+    /// height - curent chains height, last block's height
     pub async fn new_main_chain_difficulty(
         &self,
         timestamp: u64,
@@ -2171,7 +2222,7 @@ impl BlockChainTree {
 
                     self.main_chain.add_block_raw(&constructed_block).await?;
                     self.main_chain
-                        .add_transaction_raw(founder_transaction)
+                        .add_transaction_raw(&founder_transaction)
                         .await?;
                 } else {
                     let transactions_amount = trxs_pool.len();
@@ -2247,7 +2298,7 @@ impl BlockChainTree {
 
                     // add founder transaction
                     self.main_chain
-                        .add_transaction_raw(founder_transaction)
+                        .add_transaction_raw(&founder_transaction)
                         .await?;
 
                     // gather transactions from the pool
@@ -2285,14 +2336,13 @@ impl BlockChainTree {
     /// also removes all higher blocks, linked transactions and derivative chains
     ///
     /// clears transactions pool
-    pub async fn overwrite_main_chain_block<'a, I>(
+    ///
+    /// transactions should be sorted and verify beforehand
+    pub async fn overwrite_main_chain_block(
         &self,
         new_block: &MainChainBlockArc,
-        transactions: I,
-    ) -> Result<(), BlockChainTreeError>
-    where
-        I: Iterator<Item = &'a Transaction>,
-    {
+        transactions: &[Transaction],
+    ) -> Result<(), BlockChainTreeError> {
         let mut difficulty = self.main_chain.difficulty.write().await;
         let mut trxs_pool = self.trxs_pool.write().await;
 
@@ -2361,12 +2411,65 @@ impl BlockChainTree {
             );
         }
 
+        let fee = Chain::calculate_fee(&new_block.get_info().difficulty);
+
+        // founder transaction
+        let founder_transaction_amount = (transactions.len() * &fee)
+            + if self.get_funds(&ROOT_PUBLIC_ADDRESS).await? >= *MAIN_CHAIN_PAYMENT {
+                // if there is enough coins left in the root address make payment transaction
+                self.decrease_funds(&ROOT_PUBLIC_ADDRESS, &MAIN_CHAIN_PAYMENT)
+                    .await?;
+                MAIN_CHAIN_PAYMENT.clone()
+            } else {
+                0usize.into()
+            };
+
+        let founder_transaction = Transaction::new(
+            ROOT_PUBLIC_ADDRESS,
+            *new_block.get_founder(),
+            new_block.get_info().timestamp,
+            founder_transaction_amount,
+            ROOT_PRIVATE_ADDRESS,
+        );
+
+        // verify merkle tree
+        let mut transactions_hashes: Vec<[u8; 32]> = Vec::with_capacity(transactions.len() + 1);
+        transactions_hashes.push(founder_transaction.hash());
+        transactions_hashes.extend(transactions.iter().map(|t| t.hash()));
+
+        let mut merkle_tree = MerkleTree::new();
+        merkle_tree.add_objects(&transactions_hashes);
+        let calculated_merkle_tree_root = merkle_tree.get_root();
+
+        if !new_block.get_merkle_root().eq(calculated_merkle_tree_root) {
+            return Err(
+                Report::new(BlockChainTreeError::Chain(ChainErrorKind::FailedToVerify))
+                    .attach_printable("The provided in block merkle tree root is not equal to the supplied transactions"),
+            );
+        }
+
         let summary_db = self.summary_db.read().await;
         self.main_chain
             .block_overwrite(new_block, &summary_db)
             .await?;
 
-        // TODO: add transations
+        // add transations
+        self.add_transaction(&founder_transaction, &fee).await?;
+
+        for transaction in transactions {
+            self.add_transaction(transaction, &fee).await?;
+        }
+
+        // clear txs pool
+        trxs_pool.pool.clear();
+
+        // recalculate difficulty
+        self.new_main_chain_difficulty(
+            new_block.get_info().timestamp,
+            &mut difficulty,
+            new_block_height,
+        )
+        .await?;
 
         Ok(())
     }
