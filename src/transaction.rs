@@ -10,6 +10,7 @@ use crate::dump_headers::Headers;
 use secp256k1::ecdsa::Signature;
 use secp256k1::PublicKey;
 use secp256k1::{Message, Secp256k1, SecretKey};
+use std::mem::transmute;
 
 use error_stack::{IntoReport, Report, Result, ResultExt};
 
@@ -21,7 +22,19 @@ impl Ord for TransactionableItem {
     fn cmp(&self, other: &Self) -> Ordering {
         match self.get_timestamp().cmp(&other.get_timestamp()) {
             Ordering::Less => Ordering::Greater,
-            Ordering::Equal => Ordering::Equal,
+            Ordering::Equal => {
+                let tr_hash: [u64; 4] = unsafe { transmute(self.hash()) };
+                let other_hash: [u64; 4] = unsafe { transmute(other.hash()) };
+
+                for (left, right) in tr_hash.iter().zip(other_hash.iter()) {
+                    match left.cmp(right) {
+                        Ordering::Less => return Ordering::Greater,
+                        Ordering::Equal => {}
+                        Ordering::Greater => return Ordering::Less,
+                    }
+                }
+                Ordering::Equal
+            }
             Ordering::Greater => Ordering::Less,
         }
     }
@@ -31,10 +44,21 @@ impl PartialOrd for TransactionableItem {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(match self.get_timestamp().cmp(&other.get_timestamp()) {
             Ordering::Less => Ordering::Greater,
-            Ordering::Equal => Ordering::Equal,
+            Ordering::Equal => {
+                let tr_hash: [u64; 4] = unsafe { transmute(self.hash()) };
+                let other_hash: [u64; 4] = unsafe { transmute(other.hash()) };
+
+                for (left, right) in tr_hash.iter().zip(other_hash.iter()) {
+                    match left.cmp(right) {
+                        Ordering::Less => return Some(Ordering::Greater),
+                        Ordering::Equal => {}
+                        Ordering::Greater => return Some(Ordering::Less),
+                    }
+                }
+                Ordering::Equal
+            }
             Ordering::Greater => Ordering::Less,
         })
-        //Some(self.get_timestamp().cmp(&other.get_timestamp()))
     }
 }
 
