@@ -2265,10 +2265,14 @@ impl BlockChainTree {
     /// also removes all higher blocks, linked transactions and derivative chains
     ///
     /// clears transactions pool
-    pub async fn overwrite_main_chain_block(
+    pub async fn overwrite_main_chain_block<'a, I>(
         &self,
         new_block: &MainChainBlockArc,
-    ) -> Result<(), BlockChainTreeError> {
+        transactions: I,
+    ) -> Result<(), BlockChainTreeError>
+    where
+        I: Iterator<Item = &'a Transaction>,
+    {
         let mut difficulty = self.main_chain.difficulty.write().await;
         let mut trxs_pool = self.trxs_pool.write().await;
 
@@ -2342,7 +2346,7 @@ impl BlockChainTree {
             .block_overwrite(new_block, &summary_db)
             .await?;
 
-        // TODO: add trransations
+        // TODO: add transations
 
         Ok(())
     }
