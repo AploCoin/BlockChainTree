@@ -533,6 +533,20 @@ impl Chain {
         Ok(Some(transaction))
     }
 
+    /// Get deserialized transaction by it's hash
+    pub async fn find_transaction_raw(
+        &self,
+        hash: &[u8; 32],
+    ) -> Result<Option<Vec<u8>>, BlockChainTreeError> {
+        Ok(self
+            .transactions
+            .get(hash)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindTransaction))
+            .attach_printable("Error getting transaction from database")?
+            .map(|dump| dump.to_vec()))
+    }
+
     /// Check whether transaction exists in the chain
     pub async fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
         Ok(self
