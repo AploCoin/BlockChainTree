@@ -874,11 +874,10 @@ impl Chain {
     }
 
     pub fn block_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
-        Ok(self
-            .height_reference
+        self.height_reference
             .contains_key(hash)
             .into_report()
-            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?)
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))
     }
 }
 
