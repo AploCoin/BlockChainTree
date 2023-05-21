@@ -548,7 +548,7 @@ impl Chain {
     }
 
     /// Check whether transaction exists in the chain
-    pub async fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
+    pub fn transaction_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
         Ok(self
             .transactions
             .get(hash)
@@ -871,6 +871,13 @@ impl Chain {
         }
 
         Ok(())
+    }
+
+    pub fn block_exists(&self, hash: &[u8; 32]) -> Result<bool, BlockChainTreeError> {
+        self.height_reference
+            .contains_key(hash)
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))
     }
 }
 
@@ -1702,7 +1709,6 @@ impl BlockChainTree {
         if self
             .get_main_chain()
             .transaction_exists(hash)
-            .await
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))?
@@ -1728,7 +1734,6 @@ impl BlockChainTree {
             || self
                 .get_main_chain()
                 .transaction_exists(&tr_hash)
-                .await
                 .change_context(BlockChainTreeError::BlockChainTree(
                     BCTreeErrorKind::NewTransaction,
                 ))?
@@ -1797,7 +1802,6 @@ impl BlockChainTree {
         if self
             .get_main_chain()
             .transaction_exists(&tr_hash)
-            .await
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::NewTransaction,
             ))?
