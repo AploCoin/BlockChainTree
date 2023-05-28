@@ -715,6 +715,34 @@ impl Chain {
         Ok(())
     }
 
+    /// Flushes all DBs and config
+    pub async fn flush(&self) -> Result<(), BlockChainTreeError> {
+        self.dump_config().await?;
+
+        self.db
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
+            .attach_printable("failed to flush db")?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
+            .attach_printable("failed to flush height references")?;
+
+        self.transactions
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
+            .attach_printable("failed to flush transactions")?;
+
+        Ok(())
+    }
+
     /// Create new chain
     ///
     /// Creates new chain without config, creates necessary folders
@@ -1133,6 +1161,26 @@ impl DerivativeChain {
         Ok(())
     }
 
+    pub async fn flush(&self, root_path: &str) -> Result<(), BlockChainTreeError> {
+        self.dump_config(root_path)?;
+
+        self.db
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
+            .attach_printable("failed to flush db")?;
+
+        self.height_reference
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
+            .attach_printable("failed to flush db")?;
+
+        Ok(())
+    }
+
     /// Open chain without config, sets up all directories
     pub fn without_config(
         root_path: &str,
@@ -1403,6 +1451,28 @@ impl BlockChainTree {
                 ))
                 .attach_printable("failed to write transaction dump")?;
         }
+
+        Ok(())
+    }
+
+    /// Flushes whole blockchain
+    ///
+    /// also dumps pool
+    pub async fn flush_blockchain(&self) -> Result<(), BlockChainTreeError> {
+        self.dump_pool().await?;
+
+        self.main_chain.flush().await?;
+
+        for (address, chain) in self.deratives.read().await.iter() {
+            let mut path_string = String::from(DERIVATIVE_CHAINS_DIRECTORY);
+            let hex_addr: String = address.encode_hex::<String>();
+            path_string += &hex_addr;
+            path_string += "/";
+
+            chain.read().await.flush(&path_string).await?;
+        }
+
+        self.summary_db.read().await.flush().await?;
 
         Ok(())
     }

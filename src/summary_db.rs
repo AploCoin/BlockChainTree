@@ -4,7 +4,7 @@ use num_traits::Zero;
 use sled::Db;
 
 use crate::{
-    errors::{BCTreeErrorKind, BlockChainTreeError},
+    errors::{BCTreeErrorKind, BlockChainTreeError, ChainErrorKind},
     tools,
 };
 
@@ -38,6 +38,17 @@ impl SummaryDB {
                 std::str::from_utf8(addr).unwrap()
             ))),
         }
+    }
+
+    pub async fn flush(&self) -> Result<(), BlockChainTreeError> {
+        self.db
+            .flush_async()
+            .await
+            .into_report()
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
+            .attach_printable("failed to flush db")?;
+
+        Ok(())
     }
 
     /// Decrease funds
