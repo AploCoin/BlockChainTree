@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use blockchaintree::block::{self, BasicInfo, TransactionBlock};
+use blockchaintree::block::{self, BasicInfo, GenesisBlock, MainChainBlock, TransactionBlock};
 use blockchaintree::blockchaintree::{BlockChainTree, ROOT_PUBLIC_ADDRESS};
 use blockchaintree::tools::{self, check_pow};
 use blockchaintree::{self, blockchaintree::ROOT_PRIVATE_ADDRESS, transaction::Transactionable};
@@ -194,4 +194,11 @@ fn transaction_block_test() {
 #[test]
 fn check_pow_test() {
     check_pow(&[0u8; 32], &[1u8; 32], &BigUint::from_i32(1).unwrap());
+}
+
+#[test]
+fn dump_genesis_block() {
+    let genesis_block = GenesisBlock {};
+
+    println!("{:?}", genesis_block.hash());
 }
