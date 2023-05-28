@@ -723,7 +723,7 @@ impl MainChainBlock for GenesisBlock {
     }
 
     fn verify_block(&self, prev_hash: &[u8; 32]) -> bool {
-        GENESIS_BLOCK.eq(prev_hash)
+        [0; 32].eq(prev_hash)
     }
 
     fn get_transactions(&self) -> Arc<Vec<[u8; 32]>> {
