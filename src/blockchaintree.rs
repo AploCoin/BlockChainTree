@@ -582,7 +582,9 @@ impl Chain {
         height: u64,
     ) -> Result<Option<Vec<u8>>, BlockChainTreeError> {
         if height == 0 {
-            return Ok(None);
+            return Ok(Some(GenesisBlock {}.dump().change_context(
+                BlockChainTreeError::Chain(ChainErrorKind::FailedToHashBlock),
+            )?));
         }
         let chain_height = self.height.read().await;
         if height > *chain_height {
