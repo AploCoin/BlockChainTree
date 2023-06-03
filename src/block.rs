@@ -665,8 +665,8 @@ impl MainChainBlock for SummarizeBlock {
     }
 }
 
-/// Deserializes block's dump into MainChainBlockBox
-pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockBox, BlockError> {
+/// Deserializes block's dump into MainChainBlockArc
+pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockArc, BlockError> {
     if dump.is_empty() {
         return Err(
             Report::new(BlockError::HeaderError(DumpHeadersErrorKind::WrongHeader))
@@ -677,9 +677,9 @@ pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockBox, Bl
     let header = Headers::from_u8(*unsafe { dump.get_unchecked(0) })
         .change_context(BlockError::HeaderError(DumpHeadersErrorKind::UknownHeader))?;
 
-    let block: MainChainBlockBox = match header {
-        Headers::TransactionBlock => Box::new(TransactionBlock::parse(&dump[1..])?),
-        Headers::SummarizeBlock => Box::new(SummarizeBlock::parse(&dump[1..])?),
+    let block: MainChainBlockArc = match header {
+        Headers::TransactionBlock => Arc::new(TransactionBlock::parse(&dump[1..])?),
+        Headers::SummarizeBlock => Arc::new(SummarizeBlock::parse(&dump[1..])?),
         _ => {
             return Err(
                 Report::new(BlockError::HeaderError(DumpHeadersErrorKind::WrongHeader))
@@ -758,7 +758,7 @@ pub trait MainChainBlock {
     fn get_fee(&self) -> BigUint;
 }
 
-pub type MainChainBlockBox = Box<dyn MainChainBlock + Send + Sync>;
+//pub type MainChainBlockBox = Box<dyn MainChainBlock + Send + Sync>;
 pub type MainChainBlockArc = Arc<dyn MainChainBlock + Send + Sync>;
 
 // impl Eq for MainChainBlockBox {}
