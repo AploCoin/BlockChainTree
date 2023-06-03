@@ -634,9 +634,9 @@ impl Chain {
     pub async fn find_by_height(
         &self,
         height: u64,
-    ) -> Result<Option<Box<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
+    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
         if height == 0 {
-            return Ok(Some(Box::new(GenesisBlock {})));
+            return Ok(Some(Arc::new(GenesisBlock {})));
         }
         let chain_height = self.height.read().await;
         if height > *chain_height {
@@ -665,7 +665,7 @@ impl Chain {
     pub async fn find_by_hash(
         &self,
         hash: &[u8; 32],
-    ) -> Result<Option<Box<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
+    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
         let height = match self
             .height_reference
             .get(hash)
@@ -805,7 +805,7 @@ impl Chain {
     /// Get deserialized last block of the chain
     pub async fn get_last_block(
         &self,
-    ) -> Result<Option<Box<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
+    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
         let height = self.height.read().await;
         let last_block_index = *height - 1;
         drop(height);
@@ -2102,10 +2102,10 @@ impl BlockChainTree {
         pow: BigUint,
         addr: [u8; 33],
         timestamp: u64,
-    ) -> Result<Box<dyn MainChainBlock + Send + Sync>, BlockChainTreeError> {
+    ) -> Result<Arc<dyn MainChainBlock + Send + Sync>, BlockChainTreeError> {
         let mut difficulty = self.main_chain.get_locked_difficulty().await;
         let height = self.main_chain.get_height().await as usize;
-        let block: Box<dyn MainChainBlock + Send + Sync> =
+        let block: Arc<dyn MainChainBlock + Send + Sync> =
             if height % BLOCKS_PER_ITERATION == 0 && height > 0 {
                 // new cycle
                 let block = self
@@ -2120,13 +2120,13 @@ impl BlockChainTree {
                 *summary_db_lock = SummaryDB::new(summary_db);
                 *old_summary_db_lock = SummaryDB::new(old_summary_db);
 
-                Box::new(block)
+                Arc::new(block)
             } else {
                 let block = self
                     .emit_transaction_block(pow, addr, timestamp, *difficulty)
                     .await?;
 
-                Box::new(block)
+                Arc::new(block)
             };
 
         self.new_main_chain_difficulty(timestamp, &mut difficulty, height as u64)
