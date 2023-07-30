@@ -1,11 +1,10 @@
 use std::str::FromStr;
 
 use blockchaintree::block::{self, BasicInfo, GenesisBlock, MainChainBlock, TransactionBlock};
-use blockchaintree::blockchaintree::{BlockChainTree, ROOT_PUBLIC_ADDRESS};
+use blockchaintree::blockchaintree::{BlockChainTree, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS};
 use blockchaintree::tools::{self, check_pow};
 use blockchaintree::{self, blockchaintree::ROOT_PRIVATE_ADDRESS, transaction::Transactionable};
 use num_bigint::{BigUint, ToBigUint};
-use num_traits::FromPrimitive;
 use secp256k1::{PublicKey, Secp256k1, SecretKey};
 
 static SENDER: &[u8; 33] = b"123456789012345678901234567890123";
@@ -19,7 +18,7 @@ async fn chain_test() {
 
     let default_info = BasicInfo::new(
         500,
-        1000u64.to_biguint().unwrap(),
+        vec![3, 232],
         [0u8; 32],
         //[1u8; 32],
         0,
@@ -102,7 +101,7 @@ async fn mine_main_chain() {
     println!("Difficulty: {:?}", chain.get_difficulty().await);
 
     let res = blockchain
-        .emit_main_chain_block(BigUint::from(0u64), *SENDER, 1000)
+        .emit_main_chain_block(&vec![0], *SENDER, INCEPTION_TIMESTAMP + 10)
         .await
         .unwrap();
 
@@ -162,14 +161,7 @@ fn biguint_test() {
 
 #[test]
 fn transaction_block_test() {
-    let default_info = BasicInfo::new(
-        500,
-        0u64.to_biguint().unwrap(),
-        [1u8; 32],
-        0,
-        [5u8; 32],
-        SENDER.clone(),
-    );
+    let default_info = BasicInfo::new(500, vec![0], [1u8; 32], 0, [5u8; 32], SENDER.clone());
     let tr = blockchaintree::transaction::Transaction::new(
         SENDER.clone(),
         RECIEVER.clone(),
@@ -193,7 +185,7 @@ fn transaction_block_test() {
 
 #[test]
 fn check_pow_test() {
-    check_pow(&[0u8; 32], &[1u8; 32], &BigUint::from_i32(1).unwrap());
+    check_pow(&[0u8; 32], &[1u8; 32], &vec![1]);
 }
 
 #[test]

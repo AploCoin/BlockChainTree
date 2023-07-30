@@ -846,7 +846,7 @@ impl Chain {
     /// that this function will get latest info
     ///
     /// P.S. it was made into separate function only because of mudularity and to provide raw API(later)
-    async fn check_pow_validity(&self, pow: BigUint) -> Result<bool, BlockChainTreeError> {
+    async fn check_pow_validity(&self, pow: &[u8]) -> Result<bool, BlockChainTreeError> {
         let last_hash = self.get_last_hash().await?;
 
         let difficulty = self.get_difficulty().await;
@@ -1917,7 +1917,7 @@ impl BlockChainTree {
     /// adds new transactions block and poped transactions to the main chain
     async fn emit_transaction_block(
         &self,
-        pow: BigUint,
+        pow: &[u8],
         addr: [u8; 33],
         timestamp: u64,
         difficulty: [u8; 32],
@@ -1928,7 +1928,7 @@ impl BlockChainTree {
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
 
-        if !tools::check_pow(&last_hash, &difficulty, &pow) {
+        if !tools::check_pow(&last_hash, &difficulty, pow) {
             // if pow is bad
             return Err(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::WrongPow,
@@ -1979,7 +1979,7 @@ impl BlockChainTree {
 
         let basic_info = BasicInfo::new(
             timestamp,
-            pow,
+            pow.to_vec(),
             last_hash,
             self.main_chain.get_height().await,
             difficulty,
@@ -1998,7 +1998,7 @@ impl BlockChainTree {
 
     async fn emit_summarize_block(
         &self,
-        pow: BigUint,
+        pow: &[u8],
         addr: [u8; 33],
         timestamp: u64,
         difficulty: [u8; 32],
@@ -2017,7 +2017,7 @@ impl BlockChainTree {
 
         let basic_info = BasicInfo::new(
             timestamp,
-            pow,
+            pow.to_vec(),
             last_hash,
             self.main_chain.get_height().await,
             difficulty,
@@ -2099,7 +2099,7 @@ impl BlockChainTree {
     /// returns emmited block
     pub async fn emit_main_chain_block(
         &self,
-        pow: BigUint,
+        pow: &[u8],
         addr: [u8; 33],
         timestamp: u64,
     ) -> Result<Arc<dyn MainChainBlock + Send + Sync>, BlockChainTreeError> {

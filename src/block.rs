@@ -8,7 +8,6 @@ use crate::tools;
 use crate::transaction::{Transaction, Transactionable};
 use byteorder::{BigEndian, ReadBytesExt};
 use num_bigint::BigUint;
-use num_traits::FromPrimitive;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::mem::transmute;
@@ -29,7 +28,7 @@ macro_rules! bytes_to_u64 {
 #[derive(Debug, Clone)]
 pub struct BasicInfo {
     pub timestamp: u64,
-    pub pow: BigUint,
+    pub pow: Vec<u8>,
     pub previous_hash: [u8; 32],
     pub height: u64,
     pub difficulty: [u8; 32],
@@ -39,7 +38,7 @@ pub struct BasicInfo {
 impl BasicInfo {
     pub fn new(
         timestamp: u64,
-        pow: BigUint,
+        pow: Vec<u8>,
         previous_hash: [u8; 32],
         height: u64,
         difficulty: [u8; 32],
@@ -56,7 +55,7 @@ impl BasicInfo {
     }
 
     pub fn get_dump_size(&self) -> usize {
-        8 + tools::bigint_size(&self.pow) + 32 + 32 + 8 + 33
+        8 + self.pow.len() + 32 + 32 + 8 + 33 + 1
     }
     pub fn dump(&self, buffer: &mut Vec<u8>) -> Result<(), BlockError> {
         // dumping timestamp
@@ -81,8 +80,10 @@ impl BasicInfo {
         buffer.extend(self.founder);
 
         // dumping PoW
-        tools::dump_biguint(&self.pow, buffer)
-            .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Dump))?;
+        // tools::dump_biguint(&self.pow, buffer)
+        //     .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Dump))?;
+        buffer.push(self.pow.len() as u8);
+        buffer.extend(self.pow.iter());
 
         Ok(())
     }
@@ -119,9 +120,11 @@ impl BasicInfo {
         index += 33;
 
         // parsing PoW
-        let (pow, _) = tools::load_biguint(&data[index..])
-            .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Parse))
-            .attach_printable("failed to parse PoW")?;
+        // let (pow, _) = tools::load_biguint(&data[index..])
+        //     .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Parse))
+        //     .attach_printable("failed to parse PoW")?;
+        let pow_length = data[index];
+        let pow = data[index + 1..index + 1 + pow_length as usize].to_vec();
 
         Ok(BasicInfo {
             timestamp,
@@ -717,7 +720,7 @@ impl MainChainBlock for GenesisBlock {
     fn get_info(&self) -> BasicInfo {
         BasicInfo {
             timestamp: INCEPTION_TIMESTAMP,
-            pow: BigUint::from_u64(0).unwrap(),
+            pow: vec![0],
             previous_hash: [0; 32],
             height: 0,
             difficulty: BEGINNING_DIFFICULTY,
