@@ -850,7 +850,7 @@ impl Chain {
         let last_hash = self.get_last_hash().await?;
 
         let difficulty = self.get_difficulty().await;
-        Ok(tools::check_pow(&last_hash, &difficulty, &pow))
+        Ok(tools::check_pow(&last_hash, &difficulty, pow))
     }
 
     /// Calculate fee for the difficulty
@@ -2007,7 +2007,7 @@ impl BlockChainTree {
             BlockChainTreeError::BlockChainTree(BCTreeErrorKind::CreateMainChainBlock),
         )?;
 
-        if !tools::check_pow(&last_hash, &difficulty, &pow) {
+        if !tools::check_pow(&last_hash, &difficulty, pow) {
             // if pow is bad
             return Err(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::WrongPow,
