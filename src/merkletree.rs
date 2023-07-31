@@ -242,7 +242,7 @@ mod tests {
 
         merkle_tree.add_objects(&vec![[1u8; 32], [1u8; 32], [1u8; 32], [1u8; 32], [1u8; 32]]);
 
-        let root = merkle_tree.get_root().clone();
+        let root = *merkle_tree.get_root();
         println!("Root: {:?}", root);
 
         assert_eq!(
