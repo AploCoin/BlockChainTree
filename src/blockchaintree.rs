@@ -1973,8 +1973,7 @@ impl BlockChainTree {
         let transactions_hashes: Vec<_> = transactions.iter().map(|trx| trx.hash()).collect();
 
         // build merkle tree & get root
-        let mut merkle_tree = MerkleTree::new();
-        merkle_tree.add_objects(&transactions_hashes);
+        let merkle_tree = MerkleTree::build_tree(&transactions_hashes);
         let merkle_tree_root = *merkle_tree.get_root();
 
         let basic_info = BasicInfo::new(
@@ -2527,8 +2526,8 @@ impl BlockChainTree {
         transactions_hashes.push(founder_transaction.hash());
         transactions_hashes.extend(transactions.iter().map(|t| t.hash()));
 
-        let mut merkle_tree = MerkleTree::new();
-        merkle_tree.add_objects(&transactions_hashes);
+        let merkle_tree = MerkleTree::build_tree(&transactions_hashes);
+        //merkle_tree.add_objects(&transactions_hashes);
         let calculated_merkle_tree_root = merkle_tree.get_root();
 
         if !new_block.get_merkle_root().eq(calculated_merkle_tree_root) {
