@@ -1,10 +1,6 @@
-use error_stack::{Report, Result};
-use rsa::PaddingScheme;
-use sha2::{Digest, Sha256};
-use std::time::{Duration, Instant};
+use sha2::Sha256;
+use sha2::Digest;
 use std::{convert::TryInto, sync::Arc};
-
-use crate::errors::*;
 
 static PADDING_HASH: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\
                                 \xff\xff\xff\xff\xff\xff\xff\xff\
@@ -38,7 +34,7 @@ impl MerkleTree {
         let mut array_representation = vec![PADDING_HASH; nodes_total];
 
         for (item, leaf_index) in items
-            .into_iter()
+            .iter()
             .zip(nodes_total - leaves_amount..nodes_total)
         {
             unsafe {
@@ -58,11 +54,11 @@ impl MerkleTree {
             unsafe {
                 for (index, (left, right)) in array_representation
                     .get_unchecked(left_index)
-                    .into_iter()
+                    .iter()
                     .zip(
                         array_representation
                             .get_unchecked(left_index + 1)
-                            .into_iter(),
+                            .iter(),
                     )
                     .enumerate()
                 {
