@@ -167,14 +167,14 @@ impl TransactionBlock {
     }
 
     pub fn build_merkle_tree(&mut self) -> Result<(), BlockError> {
-        let mut new_merkle_tree = MerkleTree::new();
+        let new_merkle_tree = MerkleTree::build_tree(&self.transactions);
 
-        let res = new_merkle_tree.add_objects(&self.transactions);
-        if !res {
-            return Err(Report::new(BlockError::TransactionBlock(
-                TxBlockErrorKind::BuildingMerkleTree,
-            )));
-        }
+        // let res = new_merkle_tree.add_objects(&self.transactions);
+        // if !res {
+        //     return Err(Report::new(BlockError::TransactionBlock(
+        //         TxBlockErrorKind::BuildingMerkleTree,
+        //     )));
+        // }
         self.merkle_tree = Some(new_merkle_tree);
         Ok(())
     }
