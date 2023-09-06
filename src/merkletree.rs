@@ -1,5 +1,5 @@
-use sha2::Sha256;
 use sha2::Digest;
+use sha2::Sha256;
 use std::{convert::TryInto, sync::Arc};
 
 static PADDING_HASH: [u8; 32] = *b"\xff\xff\xff\xff\xff\xff\xff\xff\
@@ -33,10 +33,7 @@ impl MerkleTree {
 
         let mut array_representation = vec![PADDING_HASH; nodes_total];
 
-        for (item, leaf_index) in items
-            .iter()
-            .zip(nodes_total - leaves_amount..nodes_total)
-        {
+        for (item, leaf_index) in items.iter().zip(nodes_total - leaves_amount..nodes_total) {
             unsafe {
                 *(array_representation.get_unchecked_mut(leaf_index)) = *item;
             }
@@ -55,11 +52,7 @@ impl MerkleTree {
                 for (index, (left, right)) in array_representation
                     .get_unchecked(left_index)
                     .iter()
-                    .zip(
-                        array_representation
-                            .get_unchecked(left_index + 1)
-                            .iter(),
-                    )
+                    .zip(array_representation.get_unchecked(left_index + 1).iter())
                     .enumerate()
                 {
                     *to_hash.get_unchecked_mut(index) = *left & *right;
