@@ -1,6 +1,7 @@
 use crate::errors::*;
 use error_stack::{IntoReport, Report, Result, ResultExt};
 use num_bigint::BigUint;
+use primitive_types::U256;
 use sha2::{Digest, Sha256};
 use std::convert::TryInto;
 use std::fs::File;
@@ -22,6 +23,70 @@ pub fn copy_dir_all(src: impl AsRef<Path>, dst: impl AsRef<Path>) -> io::Result<
         }
     }
     Ok(())
+}
+
+pub fn dump_u256(number: &U256, buffer: &mut Vec<u8>) -> Result<(), ToolsError> {
+    buffer.push(0);
+    let ind = buffer.len() - 1;
+
+    let mut found_non_null = false;
+    let mut counter: u8 = 0;
+
+    for num in number.0.iter().rev() {
+        let bytes = unsafe { transmute::<u64, [u8; 8]>(num.to_be()) };
+        for byte in bytes {
+            if found_non_null {
+                buffer.push(byte);
+                counter += 1;
+            } else {
+                if byte != 0 {
+                    buffer.push(byte);
+                    counter += 1;
+                    found_non_null = true;
+                }
+            }
+        }
+    }
+
+    unsafe { *buffer.get_unchecked_mut(ind) = counter };
+
+    Ok(())
+}
+
+pub fn load_u256(data: &[u8]) -> Result<(U256, usize), ToolsError> {
+    let amount_of_bytes: usize = data[0] as usize;
+
+    if amount_of_bytes > 32 {
+        return Err(Report::new(ToolsError::Biguint(BiguintErrorKind::Dump)));
+    }
+
+    if data.len() < amount_of_bytes {
+        return Err(
+            Report::new(ToolsError::Biguint(BiguintErrorKind::Load)).attach_printable(format!(
+                "data = {} // bytes = {}",
+                data.len(),
+                amount_of_bytes
+            )),
+        );
+    }
+
+    Ok((
+        U256::from_big_endian(&data[1..1 + amount_of_bytes]),
+        amount_of_bytes,
+    ))
+}
+
+pub fn u256_size(number: &U256) -> usize {
+    let bits_size: usize = number.bits();
+    if bits_size == 0 {
+        return 2;
+    }
+    let mut amount_byte_size: usize = bits_size / 8;
+    if number.bits() % 8 != 0 {
+        amount_byte_size += 1;
+    }
+
+    amount_byte_size + 1
 }
 
 pub fn dump_biguint(number: &BigUint, buffer: &mut Vec<u8>) -> Result<(), ToolsError> {
@@ -148,4 +213,22 @@ pub fn check_pow(prev_hash: &[u8; 32], difficulty: &[u8; 32], pow: &[u8]) -> boo
     }
 
     true
+}
+
+#[cfg(test)]
+mod tests {
+    use primitive_types::U256;
+
+    use super::{dump_u256, load_u256};
+
+    #[test]
+    fn dump_load_u256() {
+        let mut dump: Vec<u8> = Vec::new();
+
+        dump_u256(&U256::from(10000000000000000usize), &mut dump).unwrap();
+
+        let num = load_u256(&dump).unwrap();
+
+        assert_eq!(U256::from(10000000000000000usize), num.0);
+    }
 }

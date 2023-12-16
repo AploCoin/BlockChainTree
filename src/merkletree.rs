@@ -165,7 +165,7 @@ impl MerkleTree {
 mod tests {
     use super::MerkleTree;
     use rand::Rng;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     #[test]
     fn merkle_tree_test() {

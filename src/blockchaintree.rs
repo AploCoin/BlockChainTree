@@ -7,6 +7,7 @@ use crate::merkletree::MerkleTree;
 use crate::tools::{self, check_pow};
 use crate::transaction::{Transaction, Transactionable, TransactionableItem};
 use num_bigint::BigUint;
+use primitive_types::U256;
 use std::cmp::Ordering;
 use std::collections::binary_heap::Iter;
 use std::collections::{BinaryHeap, HashMap, HashSet};
@@ -140,7 +141,7 @@ pub struct Chain {
     db: Db,
     height_reference: Db,
     transactions: Db,
-    height: Arc<RwLock<u64>>,
+    height: Arc<RwLock<U256>>,
     genesis_hash: [u8; 32],
     difficulty: Arc<RwLock<[u8; 32]>>,
 }
@@ -189,7 +190,7 @@ impl Chain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
             .attach_printable("failed to read config")?;
 
-        let height: u64 = u64::from_be_bytes(height_bytes);
+        let height: U256 = U256::from_be_bytes(height_bytes);
 
         // read genesis hash
         let mut genesis_hash: [u8; 32] = [0; 32];
@@ -633,9 +634,9 @@ impl Chain {
     /// Get deserialized block by height
     pub async fn find_by_height(
         &self,
-        height: u64,
+        height: U256,
     ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, BlockChainTreeError> {
-        if height == 0 {
+        if height.is_zero() {
             return Ok(Some(Arc::new(GenesisBlock {})));
         }
         let chain_height = self.height.read().await;
@@ -2050,7 +2051,7 @@ impl BlockChainTree {
         &self,
         timestamp: u64,
         difficulty: &mut [u8; 32],
-        height: u64,
+        height: U256,
     ) -> Result<(), BlockChainTreeError> {
         // TODO: rewrite the way difficulty calculated
         if *difficulty != MAX_DIFFICULTY {

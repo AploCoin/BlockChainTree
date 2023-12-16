@@ -8,6 +8,7 @@ use crate::tools;
 use crate::transaction::{Transaction, Transactionable};
 use byteorder::{BigEndian, ReadBytesExt};
 use num_bigint::BigUint;
+use primitive_types::U256;
 use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::mem::transmute;
@@ -28,9 +29,9 @@ macro_rules! bytes_to_u64 {
 #[derive(Debug, Clone)]
 pub struct BasicInfo {
     pub timestamp: u64,
-    pub pow: Vec<u8>,
+    pub pow: U256,
     pub previous_hash: [u8; 32],
-    pub height: u64,
+    pub height: U256,
     pub difficulty: [u8; 32],
     pub founder: [u8; 33],
 }
@@ -38,9 +39,9 @@ pub struct BasicInfo {
 impl BasicInfo {
     pub fn new(
         timestamp: u64,
-        pow: Vec<u8>,
+        pow: U256,
         previous_hash: [u8; 32],
-        height: u64,
+        height: U256,
         difficulty: [u8; 32],
         founder: [u8; 33],
     ) -> BasicInfo {
@@ -55,7 +56,7 @@ impl BasicInfo {
     }
 
     pub fn get_dump_size(&self) -> usize {
-        8 + self.pow.len() + 32 + 32 + 8 + 33 + 1
+        8 + 32 + 32 + 32 + 8 + 33 + 1
     }
     pub fn dump(&self, buffer: &mut Vec<u8>) -> Result<(), BlockError> {
         // dumping timestamp
@@ -69,9 +70,7 @@ impl BasicInfo {
         }
 
         // dumping height
-        for byte in self.height.to_be_bytes().iter() {
-            buffer.push(*byte);
-        }
+        tools::dump_u256(&self.height, buffer).unwrap();
 
         // dumping difficulty
         buffer.extend(self.difficulty);
@@ -80,10 +79,8 @@ impl BasicInfo {
         buffer.extend(self.founder);
 
         // dumping PoW
-        // tools::dump_biguint(&self.pow, buffer)
-        //     .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Dump))?;
-        buffer.push(self.pow.len() as u8);
-        buffer.extend(self.pow.iter());
+
+        tools::dump_u256(&self.pow, buffer).unwrap();
 
         Ok(())
     }
