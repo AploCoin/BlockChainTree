@@ -217,6 +217,8 @@ pub fn check_pow(prev_hash: &[u8; 32], difficulty: &[u8; 32], pow: &[u8]) -> boo
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use primitive_types::U256;
 
     use super::{dump_u256, load_u256};
@@ -225,10 +227,22 @@ mod tests {
     fn dump_load_u256() {
         let mut dump: Vec<u8> = Vec::new();
 
-        dump_u256(&U256::from(10000000000000000usize), &mut dump).unwrap();
+        println!(
+            "{:?}",
+            U256::from_dec_str("10000000000000000000001000000001")
+        );
+
+        dump_u256(
+            &U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+            &mut dump,
+        )
+        .unwrap();
 
         let num = load_u256(&dump).unwrap();
 
-        assert_eq!(U256::from(10000000000000000usize), num.0);
+        assert_eq!(
+            U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+            num.0
+        );
     }
 }

@@ -1,6 +1,5 @@
 use crate::errors::*;
 use crate::tools;
-use num_bigint::BigUint;
 use primitive_types::U256;
 use sha2::{Digest, Sha256};
 use std::cmp::Ordering;
@@ -87,17 +86,17 @@ pub trait Transactionable: Send + Sync {
     fn get_timestamp(&self) -> u64;
     fn get_signature(&self) -> &[u8; 64];
     fn get_amount(&self) -> Option<U256>;
+    fn get_data(&self) -> Option<&[u8]>;
 }
 
 #[derive(Debug, Clone)]
 pub struct Transaction {
-    hash: [u8; 32],
     sender: [u8; 33],
     receiver: [u8; 33],
     timestamp: u64,
     signature: [u8; 64],
     amount: U256,
-    //data:
+    data: Option<Vec<u8>>,
 }
 
 impl Transaction {
@@ -106,13 +105,16 @@ impl Transaction {
         receiver: &[u8; 33],
         timestamp: u64,
         amount: &U256,
+        data: Option<&[u8]>,
         private_key: &[u8; 32],
     ) -> [u8; 64] {
         let mut hasher = Sha256::new();
 
-        let calculated_size: usize = 33 + 33 + 8 + tools::u256_size(amount);
+        let calculated_size: usize =
+            1 + 33 + 33 + 8 + tools::u256_size(amount) + data.map_or(0, |data| data.len());
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
+        concatenated_input.push(Headers::Transaction as u8);
         for byte in sender.iter() {
             concatenated_input.push(*byte);
         }
@@ -122,8 +124,13 @@ impl Transaction {
         for byte in timestamp.to_be_bytes().iter() {
             concatenated_input.push(*byte);
         }
-
-        tools::dump_u256(amount, &mut concatenated_input);
+        tools::dump_u256(amount, &mut concatenated_input)
+            .attach_printable("Error to dump amount")
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))
+            .unwrap();
+        if let Some(data) = data {
+            concatenated_input.extend(data.iter());
+        }
 
         hasher.update(concatenated_input);
         let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
@@ -138,37 +145,41 @@ impl Transaction {
         signature.serialize_compact()
     }
 
-    pub fn generate_hash(
-        sender: &[u8; 33],
-        receiver: &[u8; 33],
-        timestamp: u64,
-        signature: &[u8; 64],
-        amount: &U256,
-    ) -> [u8; 32] {
+    pub fn generate_hash(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
-        let calculated_size: usize = 33 + 33 + 8 + tools::u256_size(amount);
+        let calculated_size: usize = 1
+            + 33
+            + 33
+            + 8
+            + 64
+            + tools::u256_size(&self.amount)
+            + self.data.as_ref().map_or(0, |data| data.len());
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
-        for byte in sender.iter() {
+        concatenated_input.push(Headers::Transaction as u8);
+        for byte in self.sender.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in receiver.iter() {
+        for byte in self.receiver.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in signature.iter() {
+        for byte in self.signature.iter() {
             concatenated_input.push(*byte);
         }
-        for byte in timestamp.to_be_bytes().iter() {
+        for byte in self.timestamp.to_be_bytes().iter() {
             concatenated_input.push(*byte);
         }
-        // for byte in amount_as_bytes.iter() {
-        //     concatenated_input.push(*byte);
-        // }
-        tools::dump_u256(amount, &mut concatenated_input);
+        tools::dump_u256(&self.amount, &mut concatenated_input)
+            .attach_printable("Error to dump amount")
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))
+            .unwrap();
+        if let Some(data) = self.data.as_ref() {
+            concatenated_input.extend(data.iter());
+        }
 
         hasher.update(concatenated_input);
-        hasher.finalize().as_slice().try_into().unwrap()
+        unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() }
     }
 
     pub fn new(
@@ -177,34 +188,43 @@ impl Transaction {
         timestamp: u64,
         amount: U256,
         private_key: [u8; 32],
+        data: Option<Vec<u8>>,
     ) -> Transaction {
-        let signature =
-            Transaction::generate_signature(&sender, &receiver, timestamp, &amount, &private_key);
+        let signature = Transaction::generate_signature(
+            &sender,
+            &receiver,
+            timestamp,
+            &amount,
+            data.as_ref().map(|data| data.as_slice()),
+            &private_key,
+        );
         Transaction {
-            hash: Transaction::generate_hash(&sender, &receiver, timestamp, &signature, &amount),
             sender,
             receiver,
             timestamp,
             signature,
             amount,
+            data,
         }
     }
 
     pub fn new_signed(
-        hash: [u8; 32],
+        //hash: [u8; 32],
         sender: [u8; 33],
         receiver: [u8; 33],
         timestamp: u64,
         amount: U256,
+        data: Option<Vec<u8>>,
         signature: [u8; 64],
     ) -> Transaction {
         Transaction {
-            hash,
+            //hash,
             sender,
             receiver,
             timestamp,
             signature,
             amount,
+            data,
         }
     }
 
@@ -215,15 +235,20 @@ impl Transaction {
 
 impl Transactionable for Transaction {
     fn hash(&self) -> [u8; 32] {
-        self.hash
+        self.generate_hash()
     }
     fn hash_without_signature(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
-        //let amount_as_bytes = tools;
-        let calculated_size: usize = 33 + 33 + 8 + tools::u256_size(&self.amount);
+        let calculated_size: usize = 1
+            + 33
+            + 33
+            + 8
+            + tools::u256_size(&self.amount)
+            + self.data.as_ref().map_or(0, |data| data.len());
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
+        concatenated_input.push(Headers::Transaction as u8);
         for byte in self.sender.iter() {
             concatenated_input.push(*byte);
         }
@@ -233,12 +258,16 @@ impl Transactionable for Transaction {
         for byte in self.timestamp.to_be_bytes().iter() {
             concatenated_input.push(*byte);
         }
-        tools::dump_u256(&self.amount, &mut concatenated_input).unwrap();
+        tools::dump_u256(&self.amount, &mut concatenated_input)
+            .attach_printable("Error to dump amount")
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))
+            .unwrap();
+        if let Some(data) = self.data.as_ref() {
+            concatenated_input.extend(data.iter());
+        }
 
         hasher.update(concatenated_input);
-        let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
-
-        result
+        unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() }
     }
 
     fn verify(&self) -> Result<bool, TransactionError> {
@@ -272,19 +301,12 @@ impl Transactionable for Transaction {
     }
 
     fn dump(&self) -> Result<Vec<u8>, TransactionError> {
-        let timestamp_as_bytes: [u8; 8] = self.timestamp.to_be_bytes();
-
         let calculated_size: usize = self.get_dump_size();
 
         let mut transaction_dump: Vec<u8> = Vec::with_capacity(calculated_size);
 
         // header
         transaction_dump.push(Headers::Transaction as u8);
-
-        // hash
-        for byte in self.hash.iter() {
-            transaction_dump.push(*byte);
-        }
 
         // sender
         for byte in self.sender.iter() {
@@ -297,7 +319,7 @@ impl Transactionable for Transaction {
         }
 
         // timestamp
-        transaction_dump.extend(timestamp_as_bytes.iter());
+        transaction_dump.extend(self.timestamp.to_be_bytes().iter());
 
         // signature
         for byte in self.signature.iter() {
@@ -308,24 +330,35 @@ impl Transactionable for Transaction {
         tools::dump_u256(&self.amount, &mut transaction_dump)
             .change_context(TransactionError::Tx(TxErrorKind::Dump))?;
 
+        // data
+        if let Some(data) = self.data.as_ref() {
+            transaction_dump.extend(data.iter());
+        }
+
         Ok(transaction_dump)
     }
 
     fn get_dump_size(&self) -> usize {
-        1 + 32 + 33 + 33 + 8 + 64 + tools::u256_size(&self.amount)
+        1 + 33
+            + 33
+            + 8
+            + 64
+            + tools::u256_size(&self.amount)
+            + self.data.as_ref().map_or(0, |data| data.len())
     }
 
     fn parse(data: &[u8], size: u64) -> Result<Transaction, TransactionError> {
         let mut index: usize = 0;
 
-        if data.len() <= 170 {
+        if size as usize != data.len() {
             return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
-                .attach_printable("Data length <= 170"));
+                .attach_printable("Data length != size"));
         }
 
-        // parsing hash
-        let hash: [u8; 32] = unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
-        index += 32;
+        if data.len() < 139 {
+            return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
+                .attach_printable("Data length < 139"));
+        }
 
         // parsing sender address
         let sender: [u8; 33] = unsafe { data[index..index + 33].try_into().unwrap_unchecked() };
@@ -348,14 +381,24 @@ impl Transactionable for Transaction {
             .attach_printable("Couldn't parse amount")
             .change_context(TransactionError::Tx(TxErrorKind::Parse))?;
 
-        index += idx;
+        index += idx + 1;
+
+        let tx_data = if index == size as usize {
+            None
+        } else {
+            let mut new_data = Vec::<u8>::with_capacity((size as usize) - index);
+            new_data.extend(data[index..].iter());
+            index += new_data.len();
+            Some(new_data)
+        };
+
         if index != size as usize {
             return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
                 .attach_printable("Index != Tx size"));
         }
 
         Ok(Transaction::new_signed(
-            hash, sender, receiver, timestamp, amount, signature,
+            sender, receiver, timestamp, amount, tx_data, signature,
         ))
     }
 
@@ -376,5 +419,9 @@ impl Transactionable for Transaction {
     }
     fn get_amount(&self) -> Option<U256> {
         Some(self.amount.clone())
+    }
+
+    fn get_data(&self) -> Option<&[u8]> {
+        self.data.as_ref().map(|data| data.as_slice())
     }
 }
