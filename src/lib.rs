@@ -7,4 +7,5 @@ pub mod merkletree;
 pub mod summary_db;
 pub mod tools;
 pub mod transaction;
+pub mod txpool;
 pub mod types;
