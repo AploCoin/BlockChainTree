@@ -1,6 +1,5 @@
 use blockchaintree::transaction::{self, Transactionable};
 use primitive_types::U256;
-use rand::rngs::OsRng;
 use secp256k1::Secp256k1;
 
 #[test]
@@ -16,8 +15,7 @@ fn dump_parse_transaction() {
 
     let dump = transaction.dump().unwrap();
 
-    let parsed_transaction =
-        transaction::Transaction::parse(&dump[1..], dump[1..].len() as u64).unwrap();
+    let parsed_transaction = transaction::Transaction::parse(&dump[1..]).unwrap();
 
     assert_eq!(transaction.get_amount(), parsed_transaction.get_amount());
     assert_eq!(transaction.get_data(), parsed_transaction.get_data());

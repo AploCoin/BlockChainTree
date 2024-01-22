@@ -3,16 +3,10 @@
 // };
 use crate::dump_headers::Headers;
 use crate::errors::*;
-use crate::merkletree::MerkleTree;
 use crate::tools;
-use crate::transaction::{Transaction, Transactionable};
 use byteorder::{BigEndian, ReadBytesExt};
-use num_bigint::BigUint;
 use primitive_types::U256;
-use std::cmp::Ordering;
 use std::convert::TryInto;
-use std::mem::transmute;
-use std::sync::Arc;
 
 use error_stack::{Report, Result, ResultExt};
 
@@ -55,7 +49,7 @@ impl BasicInfo {
     }
 
     pub fn get_dump_size(&self) -> usize {
-        8 + 32 + 32 + 32 + 8 + 33 + 1
+        8 + tools::u256_size(&self.pow) + 32 + tools::u256_size(&self.height) + 32 + 33
     }
     pub fn dump(&self, buffer: &mut Vec<u8>) -> Result<(), BlockError> {
         // dumping timestamp
@@ -116,16 +110,8 @@ impl BasicInfo {
         index += height_size + 1;
 
         // parsing POW
-        let (pow, height_size) = tools::load_u256(&data[index..])
+        let (pow, _) = tools::load_u256(&data[index..])
             .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Parse))?;
-        index += height_size + 1;
-
-        if index != data.len() {
-            return Err(
-                Report::new(BlockError::BasicInfo(BasicInfoErrorKind::Parse))
-                    .attach_printable("sizes are different"),
-            );
-        }
 
         Ok(BasicInfo {
             timestamp,
@@ -138,14 +124,73 @@ impl BasicInfo {
     }
 }
 
-// #[derive(Debug)]
-// pub struct TransactionBlock {
-//     transactions: Arc<Vec<[u8; 32]>>,
-//     fee: BigUint,
-//     merkle_tree: Option<MerkleTree>,
-//     merkle_tree_root: [u8; 32],
-//     default_info: BasicInfo,
-// }
+#[derive(Debug)]
+pub struct TransactionBlock {
+    pub fee: U256,
+    pub merkle_tree_root: [u8; 32],
+    pub default_info: BasicInfo,
+}
+
+impl TransactionBlock {
+    pub fn new(fee: U256, default_info: BasicInfo, merkle_tree_root: [u8; 32]) -> TransactionBlock {
+        TransactionBlock {
+            fee,
+            default_info,
+            merkle_tree_root,
+        }
+    }
+
+    pub fn get_dump_size(&self) -> usize {
+        1 + tools::u256_size(&self.fee) + 32 + self.default_info.get_dump_size()
+    }
+
+    pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
+        let size = self.get_dump_size();
+
+        let mut to_return = Vec::<u8>::with_capacity(size);
+
+        // header
+        to_return.push(Headers::TransactionBlock as u8);
+
+        // merkle root
+        to_return.extend(self.merkle_tree_root.iter());
+
+        // default info
+        self.default_info
+            .dump(&mut to_return)
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))
+            .attach_printable("Error dumping default info")?;
+
+        // fee
+        tools::dump_u256(&self.fee, &mut to_return)
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))
+            .attach_printable("Error dumping fee")?;
+
+        Ok(to_return)
+    }
+
+    pub fn parse(data: &[u8]) -> Result<Self, BlockError> {
+        let mut index: usize = 0;
+
+        let merkle_tree_root: [u8; 32] = unsafe { data[0..32].try_into().unwrap_unchecked() };
+        index += 32;
+
+        let default_info = BasicInfo::parse(&data[index..])
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))
+            .attach_printable("Error parsing default data")?;
+        index += default_info.get_dump_size();
+
+        let (fee, _) = tools::load_u256(&data[index..])
+            .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))
+            .attach_printable("Error parsing fee")?;
+
+        Ok(Self {
+            fee,
+            merkle_tree_root,
+            default_info,
+        })
+    }
+}
 
 // impl TransactionBlock {
 //     pub fn new(

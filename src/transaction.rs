@@ -77,7 +77,7 @@ pub trait Transactionable: Send + Sync {
     fn dump(&self) -> Result<Vec<u8>, TransactionError>;
     fn get_dump_size(&self) -> usize;
 
-    fn parse(data: &[u8], size: u64) -> Result<Self, TransactionError>
+    fn parse(data: &[u8]) -> Result<Self, TransactionError>
     where
         Self: Sized;
 
@@ -134,7 +134,7 @@ impl Transaction {
 
         hasher.update(concatenated_input);
         let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
-        let message = unsafe { Message::from_slice(&result).unwrap_unchecked() };
+        let message = unsafe { Message::from_digest_slice(&result).unwrap_unchecked() };
 
         let secret_key = unsafe { SecretKey::from_slice(private_key).unwrap_unchecked() };
 
@@ -282,7 +282,7 @@ impl Transactionable for Transaction {
         let verifier = Secp256k1::verification_only();
 
         // load message
-        let message = Message::from_slice(&signed_data_hash)
+        let message = Message::from_digest_slice(&signed_data_hash)
             .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
@@ -347,13 +347,8 @@ impl Transactionable for Transaction {
             + self.data.as_ref().map_or(0, |data| data.len())
     }
 
-    fn parse(data: &[u8], size: u64) -> Result<Transaction, TransactionError> {
+    fn parse(data: &[u8]) -> Result<Transaction, TransactionError> {
         let mut index: usize = 0;
-
-        if size as usize != data.len() {
-            return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
-                .attach_printable("Data length != size"));
-        }
 
         if data.len() < 139 {
             return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
@@ -383,16 +378,16 @@ impl Transactionable for Transaction {
 
         index += idx + 1;
 
-        let tx_data = if index == size as usize {
+        let tx_data = if index == data.len() {
             None
         } else {
-            let mut new_data = Vec::<u8>::with_capacity((size as usize) - index);
+            let mut new_data = Vec::<u8>::with_capacity(data.len() - index);
             new_data.extend(data[index..].iter());
             index += new_data.len();
             Some(new_data)
         };
 
-        if index != size as usize {
+        if index != data.len() {
             return Err(Report::new(TransactionError::Tx(TxErrorKind::Parse))
                 .attach_printable("Index != Tx size"));
         }
