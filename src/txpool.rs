@@ -1,20 +1,25 @@
 use std::collections::binary_heap::Iter;
 use std::collections::{BinaryHeap, HashSet};
+use std::sync::Arc;
+
+use tokio::sync::RwLock;
 
 use crate::transaction::TransactionableItem;
 
+pub type SharedTxPool = Arc<RwLock<TxPool>>;
+
 #[derive(Default)]
-pub struct TransactionsPool {
+pub struct TxPool {
     pool: BinaryHeap<TransactionableItem>,
     hashes: HashSet<[u8; 32]>,
 }
 
-impl TransactionsPool {
-    pub fn new() -> TransactionsPool {
-        TransactionsPool::default()
+impl TxPool {
+    pub fn new() -> TxPool {
+        TxPool::default()
     }
-    pub fn with_capacity(capacity: usize) -> TransactionsPool {
-        TransactionsPool {
+    pub fn with_capacity(capacity: usize) -> TxPool {
+        TxPool {
             pool: BinaryHeap::with_capacity(capacity),
             hashes: HashSet::with_capacity(capacity),
         }
