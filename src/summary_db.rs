@@ -1,4 +1,4 @@
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use num_bigint::BigUint;
 use num_traits::Zero;
 use primitive_types::U256;
@@ -45,7 +45,6 @@ impl SummaryDB {
         self.db
             .flush_async()
             .await
-            .into_report()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to flush db")?;
 
@@ -90,7 +89,6 @@ impl SummaryDB {
 
                 self.db
                     .insert(addr, dump)
-                    .into_report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::DecreaseFunds,
                     ))
@@ -99,7 +97,6 @@ impl SummaryDB {
                 self.db
                     .flush_async()
                     .await
-                    .into_report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
                     ))
@@ -140,7 +137,6 @@ impl SummaryDB {
 
                 self.db
                     .insert(addr, dump)
-                    .into_report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
                     ))
@@ -152,7 +148,6 @@ impl SummaryDB {
                 self.db
                     .flush_async()
                     .await
-                    .into_report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
                     ))
@@ -178,7 +173,6 @@ impl SummaryDB {
 
                 self.db
                     .insert(addr, dump)
-                    .into_report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
                     ))
@@ -190,7 +184,6 @@ impl SummaryDB {
                 self.db
                     .flush_async()
                     .await
-                    .into_report()
                     .change_context(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::AddFunds,
                     ))

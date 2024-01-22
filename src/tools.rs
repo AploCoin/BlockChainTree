@@ -1,5 +1,5 @@
 use crate::errors::*;
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 use num_bigint::BigUint;
 use primitive_types::U256;
 use sha2::{Digest, Sha256};
@@ -38,12 +38,10 @@ pub fn dump_u256(number: &U256, buffer: &mut Vec<u8>) -> Result<(), ToolsError> 
             if found_non_null {
                 buffer.push(byte);
                 counter += 1;
-            } else {
-                if byte != 0 {
-                    buffer.push(byte);
-                    counter += 1;
-                    found_non_null = true;
-                }
+            } else if byte != 0 {
+                buffer.push(byte);
+                counter += 1;
+                found_non_null = true;
             }
         }
     }
@@ -145,22 +143,18 @@ pub fn hash(data: &[u8]) -> [u8; 32] {
 
 pub fn compress_to_file(output_file: String, data: &[u8]) -> Result<(), ToolsError> {
     let path = Path::new(&output_file);
-    let target = File::create(path)
-        .into_report()
-        .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
+    let target =
+        File::create(path).change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     let mut encoder = zstd::Encoder::new(target, 1)
-        .into_report()
         .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     encoder
         .write_all(data)
-        .into_report()
         .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     encoder
         .finish()
-        .into_report()
         .change_context(ToolsError::Zstd(ZstdErrorKind::CompressingFile))?;
 
     Ok(())
@@ -171,18 +165,15 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
     let mut decoded_data: Vec<u8> = Vec::new();
 
     let file = File::open(path)
-        .into_report()
         .attach_printable("Error opening file")
         .change_context(ToolsError::Zstd(ZstdErrorKind::DecompressingFile))?;
 
     let mut decoder = zstd::Decoder::new(file)
-        .into_report()
         .attach_printable("Error creating decoder")
         .change_context(ToolsError::Zstd(ZstdErrorKind::DecompressingFile))?;
 
     decoder
         .read_to_end(&mut decoded_data)
-        .into_report()
         .attach_printable("Error reading file")
         .change_context(ToolsError::Zstd(ZstdErrorKind::DecompressingFile))?;
 
@@ -217,7 +208,6 @@ pub fn check_pow(prev_hash: &[u8; 32], difficulty: &[u8; 32], pow: &[u8]) -> boo
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
 
     use primitive_types::U256;
 

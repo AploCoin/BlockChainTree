@@ -1,6 +1,6 @@
 use lazy_static::lazy_static;
 use primitive_types::U256;
-use sled::Db;
+
 
 static BLOCKCHAIN_DIRECTORY: &str = "./BlockChainTree/";
 
@@ -43,6 +43,6 @@ lazy_static! {
     static ref COIN_FRACTIONS: U256 = U256::from_dec_str("1000000000000000000").unwrap();
     static ref INITIAL_FEE: U256 = U256::from(25000000000000000usize); // 100_000_000//4
     static ref FEE_STEP: U256 = U256::from(625000000000usize); // 100_000_000//255
-    static ref MAIN_CHAIN_PAYMENT: U256 = INITIAL_FEE.clone();
-    static ref COINS_PER_CYCLE: U256 = (MAIN_CHAIN_PAYMENT.clone()*2000usize*BLOCKS_PER_ITERATION) + COIN_FRACTIONS.clone()*10000usize;
+    static ref MAIN_CHAIN_PAYMENT: U256 = *INITIAL_FEE;
+    static ref COINS_PER_CYCLE: U256 = (*MAIN_CHAIN_PAYMENT*2000usize*BLOCKS_PER_ITERATION) + *COIN_FRACTIONS*10000usize;
 }

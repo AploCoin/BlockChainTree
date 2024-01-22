@@ -116,7 +116,7 @@ impl BasicInfo {
 
         Ok(BasicInfo {
             timestamp,
-            pow: pow,
+            pow,
             previous_hash,
             height,
             difficulty,
@@ -234,7 +234,7 @@ impl MainChainBlock for TransactionBlock {
         &self.default_info.founder
     }
     fn get_fee(&self) -> U256 {
-        self.fee.clone()
+        self.fee
     }
 
     fn get_type(&self) -> Headers {

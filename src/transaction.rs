@@ -12,7 +12,7 @@ use secp256k1::PublicKey;
 use secp256k1::{Message, Secp256k1, SecretKey};
 use std::mem::transmute;
 
-use error_stack::{IntoReport, Report, Result, ResultExt};
+use error_stack::{Report, Result, ResultExt};
 
 pub type TransactionableItem = Box<dyn Transactionable + Send + Sync>;
 
@@ -195,7 +195,7 @@ impl Transaction {
             &receiver,
             timestamp,
             &amount,
-            data.as_ref().map(|data| data.as_slice()),
+            data.as_deref(),
             &private_key,
         );
         Transaction {
@@ -275,7 +275,6 @@ impl Transactionable for Transaction {
 
         // load sender
         let sender = PublicKey::from_slice(&self.sender)
-            .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // creating verifier
@@ -283,12 +282,10 @@ impl Transactionable for Transaction {
 
         // load message
         let message = Message::from_digest_slice(&signed_data_hash)
-            .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // load signature
         let signature = Signature::from_compact(&self.signature)
-            .into_report()
             .change_context(TransactionError::Tx(TxErrorKind::Verify))?;
 
         // verifying hashed data with public key
@@ -413,10 +410,10 @@ impl Transactionable for Transaction {
         &self.signature
     }
     fn get_amount(&self) -> Option<U256> {
-        Some(self.amount.clone())
+        Some(self.amount)
     }
 
     fn get_data(&self) -> Option<&[u8]> {
-        self.data.as_ref().map(|data| data.as_slice())
+        self.data.as_deref()
     }
 }
