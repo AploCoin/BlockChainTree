@@ -130,19 +130,29 @@ pub struct TransactionBlock {
     pub fee: U256,
     pub merkle_tree_root: Hash,
     pub default_info: BasicInfo,
+    pub transactions: Vec<Hash>,
 }
 
 impl TransactionBlock {
-    pub fn new(fee: U256, default_info: BasicInfo, merkle_tree_root: Hash) -> TransactionBlock {
+    pub fn new(
+        fee: U256,
+        default_info: BasicInfo,
+        merkle_tree_root: Hash,
+        transactions: Vec<Hash>,
+    ) -> TransactionBlock {
         TransactionBlock {
             fee,
             default_info,
             merkle_tree_root,
+            transactions,
         }
     }
 
     pub fn get_dump_size(&self) -> usize {
-        1 + tools::u256_size(&self.fee) + 32 + self.default_info.get_dump_size()
+        1 + tools::u256_size(&self.fee)
+            + 32
+            + self.default_info.get_dump_size()
+            + self.transactions.len() * 32
     }
 
     pub fn dump(&self) -> Result<Vec<u8>, BlockError> {
@@ -167,6 +177,11 @@ impl TransactionBlock {
             .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Dump))
             .attach_printable("Error dumping fee")?;
 
+        // transactions
+        for transaction in self.transactions.iter() {
+            to_return.extend(transaction.iter());
+        }
+
         Ok(to_return)
     }
 
@@ -181,14 +196,33 @@ impl TransactionBlock {
             .attach_printable("Error parsing default data")?;
         index += default_info.get_dump_size();
 
-        let (fee, _) = tools::load_u256(&data[index..])
+        let (fee, fee_size) = tools::load_u256(&data[index..])
             .change_context(BlockError::TransactionBlock(TxBlockErrorKind::Parse))
             .attach_printable("Error parsing fee")?;
+
+        index += fee_size + 1;
+
+        println!("{:?}", data.len() - index);
+
+        if (data.len() - index) % 32 != 0 {
+            return Err(
+                Report::new(BlockError::TransactionBlock(TxBlockErrorKind::Parse))
+                    .attach_printable("transactions % 32 != 0"),
+            );
+        }
+
+        let mut transactions = Vec::<Hash>::with_capacity((data.len() - index) / 32);
+
+        while index < data.len() {
+            transactions.push(unsafe { data[index..index + 32].try_into().unwrap_unchecked() });
+            index += 32;
+        }
 
         Ok(Self {
             fee,
             merkle_tree_root,
             default_info,
+            transactions,
         })
     }
 

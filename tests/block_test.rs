@@ -42,6 +42,7 @@ fn dump_parse_block() {
         U256::from_dec_str("9089878746387246532").unwrap(),
         basic_data,
         [5; 32],
+        vec![[1; 32], [2; 32], [3; 32]],
     );
 
     let dump = block.dump().unwrap();
@@ -50,6 +51,7 @@ fn dump_parse_block() {
 
     assert_eq!(block.merkle_tree_root, block_loaded.merkle_tree_root);
     assert_eq!(block.fee, block_loaded.fee);
+    assert_eq!(block.transactions, block_loaded.transactions);
 
     assert_eq!(
         block.default_info.timestamp,
