@@ -312,11 +312,11 @@ impl MainChainBlock for SummarizeBlock {
         Headers::SummarizeBlock
     }
     fn hash(&self) -> Result<Hash, BlockError> {
-        let result = self
+        let dump = self
             .dump()
-            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Hash));
+            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Hash))?;
 
-        let dump: Vec<u8> = unsafe { result.unwrap_unchecked() };
+        //let dump: Vec<u8> = unsafe { result.unwrap_unchecked() };
 
         Ok(tools::hash(&dump))
     }
