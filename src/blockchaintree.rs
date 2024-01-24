@@ -36,13 +36,3 @@ pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
 ];
 
 pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
-
-static BLOCKS_PER_ITERATION: usize = 12960;
-
-lazy_static! {
-    static ref COIN_FRACTIONS: U256 = U256::from_dec_str("1000000000000000000").unwrap();
-    static ref INITIAL_FEE: U256 = U256::from_dec_str("25000000000000000").unwrap(); // 100_000_000//4
-    static ref FEE_STEP: U256 = U256::from_dec_str("625000000000").unwrap(); // 100_000_000//255
-    static ref MAIN_CHAIN_PAYMENT: U256 = *INITIAL_FEE;
-    static ref COINS_PER_CYCLE: U256 = (*MAIN_CHAIN_PAYMENT*2000usize*BLOCKS_PER_ITERATION) + *COIN_FRACTIONS*10000usize;
-}

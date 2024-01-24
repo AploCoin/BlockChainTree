@@ -6,12 +6,13 @@ use sled::Db;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 
 use crate::{
-    block::{BasicInfo, MainChainBlock, SummarizeBlock, TransactionBlock},
+    block::{self, BasicInfo, MainChainBlock, SummarizeBlock, TransactionBlock},
     errors::{BlockChainTreeError, ChainErrorKind},
     merkletree::MerkleTree,
     tools,
     transaction::{Transaction, Transactionable},
 };
+use lazy_static::lazy_static;
 
 static BLOCKCHAIN_DIRECTORY: &str = "./BlockChainTree/";
 
@@ -37,13 +38,19 @@ pub static BEGINNING_DIFFICULTY: [u8; 32] = [
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
 ];
 
-pub static ROOT_PRIVATE_ADDRESS: [u8; 32] = [1u8; 32];
-pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
-    3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96,
-    72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143,
-];
+pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [0; 33];
 
 pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
+
+static BLOCKS_PER_ITERATION: usize = 12960;
+
+lazy_static! {
+    static ref COIN_FRACTIONS: U256 = U256::from_dec_str("1000000000000000000").unwrap();
+    static ref INITIAL_FEE: U256 = U256::from_dec_str("25000000000000000").unwrap(); // 100_000_000//4
+    static ref FEE_STEP: U256 = U256::from_dec_str("625000000000").unwrap(); // 100_000_000//255
+    static ref MAIN_CHAIN_PAYMENT: U256 = *INITIAL_FEE;
+    static ref COINS_PER_CYCLE: U256 = (*MAIN_CHAIN_PAYMENT*2000usize*BLOCKS_PER_ITERATION) + *COIN_FRACTIONS*10000usize;
+}
 
 pub struct MainChain {
     blocks: Db,
@@ -117,15 +124,12 @@ impl MainChain {
                 BEGINNING_DIFFICULTY,
                 ROOT_PUBLIC_ADDRESS,
             );
-            let initial_transaction = Transaction::new(
-                ROOT_PUBLIC_ADDRESS,
-                ROOT_PUBLIC_ADDRESS,
-                INCEPTION_TIMESTAMP,
-                U256::zero(),
-                ROOT_PRIVATE_ADDRESS,
-                None,
-            );
-            let merkle_tree = MerkleTree::build_tree(&[initial_transaction.hash()]);
+            let mut initial_amount = Vec::<u8>::new();
+            initial_amount.extend(ROOT_PUBLIC_ADDRESS.iter());
+            initial_amount.extend([0u8; 32]);
+            COINS_PER_CYCLE.to_big_endian(&mut initial_amount[33..]);
+
+            let merkle_tree = MerkleTree::build_tree(&[tools::hash(&initial_amount)]);
             chain
                 .add_block_raw(&SummarizeBlock {
                     default_info: info,
@@ -230,8 +234,6 @@ impl MainChain {
 
         *height += U256::one();
 
-        //drop(height);
-
         self.blocks
             .flush_async()
             .await
@@ -302,5 +304,27 @@ impl MainChain {
         drop(height);
 
         self.find_raw_by_height(&last_block_index).await
+    }
+
+    pub async fn find_by_height(
+        &self,
+        height: &U256,
+    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, Report<BlockChainTreeError>> {
+        let dump = self.find_raw_by_height(height).await?;
+
+        let deserialized = if let Some(data) = dump {
+            Some(
+                block::deserialize_main_chain_block(&data)
+                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))
+                    .attach_printable(format!(
+                        "Failed to deserialize main chain block with height {}",
+                        height
+                    ))?,
+            )
+        } else {
+            None
+        };
+
+        Ok(deserialized)
     }
 }
