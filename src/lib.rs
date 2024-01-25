@@ -5,6 +5,7 @@ pub mod chain;
 pub mod dump_headers;
 pub mod errors;
 pub mod merkletree;
+pub mod static_values;
 pub mod summary_db;
 pub mod tools;
 pub mod transaction;

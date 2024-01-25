@@ -5,6 +5,7 @@ use primitive_types::U256;
 use sled::Db;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 
+use crate::static_values::*;
 use crate::{
     block::{self, BasicInfo, MainChainBlock, SummarizeBlock, TransactionBlock},
     errors::{BlockChainTreeError, ChainErrorKind},
@@ -12,45 +13,6 @@ use crate::{
     tools,
     transaction::{Transaction, Transactionable},
 };
-use lazy_static::lazy_static;
-
-static BLOCKCHAIN_DIRECTORY: &str = "./BlockChainTree/";
-
-static AMMOUNT_SUMMARY: &str = "./BlockChainTree/SUMMARY/";
-static OLD_AMMOUNT_SUMMARY: &str = "./BlockChainTree/SUMMARYOLD/";
-
-static MAIN_CHAIN_DIRECTORY: &str = "./BlockChainTree/MAIN/";
-
-static DERIVATIVE_CHAINS_DIRECTORY: &str = "./BlockChainTree/DERIVATIVES/";
-static CHAINS_FOLDER: &str = "CHAINS/";
-//static DERIVATIVE_DB_DIRECTORY: BlockChainTreeError = "./BlockChainTree/DERIVATIVE/DB/";
-
-static BLOCKS_FOLDER: &str = "BLOCKS/";
-static REFERENCES_FOLDER: &str = "REF/";
-static TRANSACTIONS_FOLDER: &str = "TRANSACTIONS/";
-
-static CONFIG_FILE: &str = "Chain.config";
-static LOOKUP_TABLE_FILE: &str = "LookUpTable.dat";
-static TRANSACTIONS_POOL: &str = "TRXS_POOL.pool";
-
-pub static BEGINNING_DIFFICULTY: [u8; 32] = [
-    0xFE, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-];
-
-pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [0; 33];
-
-pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
-
-static BLOCKS_PER_ITERATION: usize = 12960;
-
-lazy_static! {
-    static ref COIN_FRACTIONS: U256 = U256::from_dec_str("1000000000000000000").unwrap();
-    static ref INITIAL_FEE: U256 = U256::from_dec_str("25000000000000000").unwrap(); // 100_000_000//4
-    static ref FEE_STEP: U256 = U256::from_dec_str("625000000000").unwrap(); // 100_000_000//255
-    static ref MAIN_CHAIN_PAYMENT: U256 = *INITIAL_FEE;
-    static ref COINS_PER_CYCLE: U256 = (*MAIN_CHAIN_PAYMENT*2000usize*BLOCKS_PER_ITERATION) + *COIN_FRACTIONS*10000usize;
-}
 
 pub struct MainChain {
     blocks: Db,
@@ -131,7 +93,7 @@ impl MainChain {
 
             let merkle_tree = MerkleTree::build_tree(&[tools::hash(&initial_amount)]);
             chain
-                .add_block_raw(&SummarizeBlock {
+                .add_block(&SummarizeBlock {
                     default_info: info,
                     merkle_tree_root: *merkle_tree.get_root(),
                 })
@@ -196,12 +158,65 @@ impl MainChain {
         Ok(())
     }
 
-    /// Adds new block to the chain db, raw API function
+    // /// Adds new block to the chain db, raw API function
+    // ///
+    // /// Adds block and sets heigh reference for it
+    // ///
+    // /// Doesn't check for blocks validity, just adds it directly to the end of the chain, checks only for the height
+    // pub async fn add_block_raw(
+    //     &self,
+    //     block: &impl MainChainBlock,
+    // ) -> Result<(), Report<BlockChainTreeError>> {
+    //     let dump = block
+    //         .dump()
+    //         .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
+
+    //     let hash = tools::hash(&dump);
+
+    //     let mut height = self.height.write().await;
+
+    //     if block.get_info().height != *height {
+    //         return Err(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock)).attach_printable(
+    //             "The height of the chain is different from the height of the block",
+    //         );
+    //     }
+
+    //     let mut height_bytes = [0u8; 32];
+    //     height.to_big_endian(&mut height_bytes);
+
+    //     self.blocks
+    //         .insert(height_bytes, dump)
+    //         .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))
+    //         .attach_printable("Failed to insert block to blocks db")?;
+
+    //     self.height_reference
+    //         .insert(hash, &height_bytes)
+    //         .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))
+    //         .attach_printable("Failed to insert height reference for the block")?;
+
+    //     *height += U256::one();
+
+    //     self.blocks
+    //         .flush_async()
+    //         .await
+    //         .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))
+    //         .attach_printable("Failed to flush blocks db")?;
+
+    //     self.height_reference
+    //         .flush_async()
+    //         .await
+    //         .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))
+    //         .attach_printable("Failed to flush height reference db")?;
+
+    //     Ok(())
+    // }
+
+    /// Adds new block to the chain db
     ///
     /// Adds block and sets heigh reference for it
     ///
-    /// Doesn't check for blocks validity, just adds it directly to the end of the chain, checks only for the height
-    pub async fn add_block_raw(
+    /// Checks for blocks validity, adds it directly to the end of the chain
+    pub async fn add_block(
         &self,
         block: &impl MainChainBlock,
     ) -> Result<(), Report<BlockChainTreeError>> {
@@ -297,6 +312,28 @@ impl MainChain {
         Ok(block)
     }
 
+    pub async fn find_by_hash(
+        &self,
+        hash: &[u8; 32],
+    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, Report<BlockChainTreeError>> {
+        let dump = self.find_raw_by_hash(hash).await?;
+
+        let deserialized = if let Some(data) = dump {
+            Some(
+                block::deserialize_main_chain_block(&data)
+                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))
+                    .attach_printable(format!(
+                        "Failed to deserialize latest main chain block with hash {:?}",
+                        hash
+                    ))?,
+            )
+        } else {
+            None
+        };
+
+        Ok(deserialized)
+    }
+
     /// Get serialized last block of the chain
     pub async fn get_last_raw_block(&self) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>> {
         let height = self.height.read().await;
@@ -306,6 +343,26 @@ impl MainChain {
         self.find_raw_by_height(&last_block_index).await
     }
 
+    /// Get deserialized latest block
+    pub async fn get_last_block(
+        &self,
+    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, Report<BlockChainTreeError>> {
+        let dump = self.get_last_raw_block().await?;
+
+        let deserialized = if let Some(data) = dump {
+            Some(
+                block::deserialize_main_chain_block(&data)
+                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))
+                    .attach_printable("Failed to deserialize latest main chain block")?,
+            )
+        } else {
+            None
+        };
+
+        Ok(deserialized)
+    }
+
+    /// Get deserialized block by height
     pub async fn find_by_height(
         &self,
         height: &U256,

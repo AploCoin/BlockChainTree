@@ -3,6 +3,8 @@
 // };
 use crate::dump_headers::Headers;
 use crate::errors::*;
+use crate::merkletree;
+use crate::static_values::TIME_PER_BLOCK;
 use crate::tools;
 use crate::types::{Address, Hash};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -243,6 +245,7 @@ pub trait MainChainBlock {
     fn get_founder(&self) -> &Address;
     fn get_fee(&self) -> U256;
     fn get_type(&self) -> Headers;
+    fn validate(&self, prev_block: MainChainBlockArc) -> Result<bool, BlockError>;
 }
 
 impl MainChainBlock for TransactionBlock {
@@ -273,6 +276,28 @@ impl MainChainBlock for TransactionBlock {
 
     fn get_type(&self) -> Headers {
         Headers::TransactionBlock
+    }
+
+    fn validate(&self, prev_block: MainChainBlockArc) -> Result<bool, BlockError> {
+        if !self.default_info.previous_hash.eq(&prev_block
+            .hash()
+            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Hash))
+            .attach_printable(format!(
+                "Error hashing block with height {}",
+                prev_block.get_info().height
+            ))?)
+        {
+            return Ok(false);
+        }
+
+        let merkle_tree = merkletree::MerkleTree::build_tree(&self.transactions);
+        if !self.merkle_tree_root.eq(merkle_tree.get_root()) {
+            return Ok(false);
+        }
+
+        let prev_block_info = prev_block.get_info();
+
+        Ok(true)
     }
 }
 
@@ -361,6 +386,10 @@ impl MainChainBlock for SummarizeBlock {
 
     fn get_fee(&self) -> U256 {
         U256::zero()
+    }
+
+    fn validate(&self, prev_hash: MainChainBlockArc) -> Result<bool, BlockError> {
+        todo!()
     }
 }
 
