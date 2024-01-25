@@ -1,4 +1,7 @@
-use blockchaintree::chain::{self, BEGINNING_DIFFICULTY, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS};
+use blockchaintree::{
+    chain,
+    static_values::{self, BEGINNING_DIFFICULTY, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS},
+};
 use primitive_types::U256;
 
 #[tokio::test]
