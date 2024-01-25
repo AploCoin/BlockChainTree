@@ -6,6 +6,7 @@ use crate::errors::*;
 use crate::merkletree;
 use crate::static_values::TIME_PER_BLOCK;
 use crate::tools;
+use crate::tools::recalculate_difficulty;
 use crate::types::{Address, Hash};
 use byteorder::{BigEndian, ReadBytesExt};
 use error_stack::{Report, Result, ResultExt};
@@ -239,7 +240,7 @@ pub trait MainChainBlock {
     fn hash(&self) -> Result<Hash, BlockError>;
     fn get_dump_size(&self) -> usize;
     fn dump(&self) -> Result<Vec<u8>, BlockError>;
-    fn get_info(&self) -> BasicInfo;
+    fn get_info(&self) -> &BasicInfo;
     fn get_merkle_root(&self) -> Hash;
     fn verify_block(&self, prev_hash: &Hash) -> bool;
     fn get_founder(&self) -> &Address;
@@ -258,8 +259,8 @@ impl MainChainBlock for TransactionBlock {
     fn dump(&self) -> Result<Vec<u8>, BlockError> {
         self.dump()
     }
-    fn get_info(&self) -> BasicInfo {
-        self.default_info.clone()
+    fn get_info(&self) -> &BasicInfo {
+        &self.default_info
     }
     fn get_merkle_root(&self) -> Hash {
         self.merkle_tree_root
@@ -295,7 +296,16 @@ impl MainChainBlock for TransactionBlock {
             return Ok(false);
         }
 
-        let prev_block_info = prev_block.get_info();
+        let mut prev_difficulty = prev_block.get_info().difficulty;
+        recalculate_difficulty(
+            prev_block.get_info().timestamp,
+            self.default_info.timestamp,
+            &mut prev_difficulty,
+        );
+
+        if self.default_info.difficulty != prev_difficulty {
+            return Ok(false);
+        }
 
         Ok(true)
     }
@@ -368,8 +378,8 @@ impl MainChainBlock for SummarizeBlock {
         Ok(to_return)
     }
 
-    fn get_info(&self) -> BasicInfo {
-        self.default_info.clone()
+    fn get_info(&self) -> &BasicInfo {
+        &self.default_info
     }
 
     fn get_merkle_root(&self) -> Hash {
