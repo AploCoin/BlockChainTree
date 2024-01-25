@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use blockchaintree::block::{self, MainChainBlock};
 use primitive_types::U256;
 
@@ -116,4 +118,39 @@ fn dump_parse_summarize_block() {
     );
 
     println!("{:?}", block_loaded);
+}
+
+#[test]
+fn validate_block_test() {
+    let basic_data = block::BasicInfo {
+        timestamp: 160000,
+        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        previous_hash: [5; 32],
+        height: U256::from_dec_str("1").unwrap(),
+        difficulty: [101; 32],
+        founder: [6; 33],
+    };
+    let prev_block = block::TransactionBlock::new(
+        U256::from_dec_str("9089878746387246532").unwrap(),
+        basic_data,
+        [5; 32],
+        vec![[1; 32], [2; 32], [3; 32]],
+    );
+
+    let basic_data = block::BasicInfo {
+        timestamp: 160000,
+        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        previous_hash: prev_block.hash().unwrap(),
+        height: U256::from_dec_str("2").unwrap(),
+        difficulty: [101; 32],
+        founder: [6; 33],
+    };
+    let block = block::TransactionBlock::new(
+        U256::from_dec_str("9089878746387246532").unwrap(),
+        basic_data,
+        [5; 32],
+        vec![[1; 32], [2; 32], [3; 32]],
+    );
+
+    assert!(!block.validate(Some(Arc::new(prev_block))).unwrap());
 }

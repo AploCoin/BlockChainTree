@@ -1,6 +1,6 @@
 use blockchaintree::{
     chain,
-    static_values::{self, BEGINNING_DIFFICULTY, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS},
+    static_values::{BEGINNING_DIFFICULTY, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS},
 };
 use primitive_types::U256;
 

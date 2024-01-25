@@ -4,8 +4,8 @@
 use crate::dump_headers::Headers;
 use crate::errors::*;
 use crate::merkletree;
-use crate::static_values::TIME_PER_BLOCK;
 use crate::tools;
+use crate::tools::check_pow;
 use crate::tools::recalculate_difficulty;
 use crate::types::{Address, Hash};
 use byteorder::{BigEndian, ReadBytesExt};
@@ -246,7 +246,7 @@ pub trait MainChainBlock {
     fn get_founder(&self) -> &Address;
     fn get_fee(&self) -> U256;
     fn get_type(&self) -> Headers;
-    fn validate(&self, prev_block: MainChainBlockArc) -> Result<bool, BlockError>;
+    fn validate(&self, prev_block: Option<MainChainBlockArc>) -> Result<bool, BlockError>;
 }
 
 impl MainChainBlock for TransactionBlock {
@@ -279,7 +279,11 @@ impl MainChainBlock for TransactionBlock {
         Headers::TransactionBlock
     }
 
-    fn validate(&self, prev_block: MainChainBlockArc) -> Result<bool, BlockError> {
+    fn validate(&self, prev_block: Option<MainChainBlockArc>) -> Result<bool, BlockError> {
+        if prev_block.is_none() {
+            return Ok(true);
+        }
+        let prev_block = unsafe { prev_block.unwrap_unchecked() };
         if !self.default_info.previous_hash.eq(&prev_block
             .hash()
             .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Hash))
@@ -304,6 +308,17 @@ impl MainChainBlock for TransactionBlock {
         );
 
         if self.default_info.difficulty != prev_difficulty {
+            return Ok(false);
+        }
+
+        let mut pow: [u8; 32] = [0; 32];
+        self.default_info.pow.to_big_endian(&mut pow);
+
+        if !check_pow(
+            &self.merkle_tree_root,
+            &prev_block.get_info().difficulty,
+            &pow,
+        ) {
             return Ok(false);
         }
 
@@ -398,8 +413,50 @@ impl MainChainBlock for SummarizeBlock {
         U256::zero()
     }
 
-    fn validate(&self, prev_hash: MainChainBlockArc) -> Result<bool, BlockError> {
-        todo!()
+    fn validate(&self, prev_block: Option<MainChainBlockArc>) -> Result<bool, BlockError> {
+        if prev_block.is_none() {
+            return Ok(true);
+        }
+        let prev_block = unsafe { prev_block.unwrap_unchecked() };
+        if !self.default_info.previous_hash.eq(&prev_block
+            .hash()
+            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Hash))
+            .attach_printable(format!(
+                "Error hashing block with height {}",
+                prev_block.get_info().height
+            ))?)
+        {
+            return Ok(false);
+        }
+
+        // let merkle_tree = merkletree::MerkleTree::build_tree(&self.transactions);
+        // if !self.merkle_tree_root.eq(merkle_tree.get_root()) {
+        //     return Ok(false);
+        // }
+
+        let mut prev_difficulty = prev_block.get_info().difficulty;
+        recalculate_difficulty(
+            prev_block.get_info().timestamp,
+            self.default_info.timestamp,
+            &mut prev_difficulty,
+        );
+
+        if self.default_info.difficulty != prev_difficulty {
+            return Ok(false);
+        }
+
+        let mut pow: [u8; 32] = [0; 32];
+        self.default_info.pow.to_big_endian(&mut pow);
+
+        if !check_pow(
+            &self.merkle_tree_root,
+            &prev_block.get_info().difficulty,
+            &pow,
+        ) {
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 }
 

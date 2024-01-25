@@ -182,9 +182,9 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
     Ok(decoded_data)
 }
 
-pub fn check_pow(prev_hash: &[u8; 32], difficulty: &[u8; 32], pow: &[u8]) -> bool {
+pub fn check_pow(hash: &[u8; 32], difficulty: &[u8; 32], pow: &[u8]) -> bool {
     let mut hasher = Sha256::new();
-    hasher.update(prev_hash);
+    hasher.update(hash);
     hasher.update(pow);
     let result: [u8; 32] = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
     let result: [u64; 4] = unsafe { transmute(result) };
