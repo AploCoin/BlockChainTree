@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use blockchaintree::block::{self, MainChainBlock};
+use blockchaintree::block::{self, Block};
 use primitive_types::U256;
 
 #[test]

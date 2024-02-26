@@ -236,7 +236,7 @@ impl TransactionBlock {
     }
 }
 
-pub trait MainChainBlock {
+pub trait Block {
     fn hash(&self) -> Result<Hash, BlockError>;
     fn get_dump_size(&self) -> usize;
     fn dump(&self) -> Result<Vec<u8>, BlockError>;
@@ -246,10 +246,10 @@ pub trait MainChainBlock {
     fn get_founder(&self) -> &Address;
     fn get_fee(&self) -> U256;
     fn get_type(&self) -> Headers;
-    fn validate(&self, prev_block: Option<MainChainBlockArc>) -> Result<bool, BlockError>;
+    fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError>;
 }
 
-impl MainChainBlock for TransactionBlock {
+impl Block for TransactionBlock {
     fn hash(&self) -> Result<Hash, BlockError> {
         self.hash()
     }
@@ -279,7 +279,7 @@ impl MainChainBlock for TransactionBlock {
         Headers::TransactionBlock
     }
 
-    fn validate(&self, prev_block: Option<MainChainBlockArc>) -> Result<bool, BlockError> {
+    fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError> {
         if prev_block.is_none() {
             return Ok(true);
         }
@@ -357,7 +357,7 @@ impl SummarizeBlock {
     }
 }
 
-impl MainChainBlock for SummarizeBlock {
+impl Block for SummarizeBlock {
     fn get_type(&self) -> Headers {
         Headers::SummarizeBlock
     }
@@ -413,7 +413,7 @@ impl MainChainBlock for SummarizeBlock {
         U256::zero()
     }
 
-    fn validate(&self, prev_block: Option<MainChainBlockArc>) -> Result<bool, BlockError> {
+    fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError> {
         if prev_block.is_none() {
             return Ok(true);
         }
@@ -460,8 +460,8 @@ impl MainChainBlock for SummarizeBlock {
     }
 }
 
-/// Deserializes block's dump into MainChainBlockArc
-pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockArc, BlockError> {
+/// Deserializes block's dump into BlockArc
+pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<BlockArc, BlockError> {
     if dump.is_empty() {
         return Err(
             Report::new(BlockError::HeaderError(DumpHeadersErrorKind::WrongHeader))
@@ -472,7 +472,7 @@ pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockArc, Bl
     let header = Headers::from_u8(*unsafe { dump.get_unchecked(0) })
         .change_context(BlockError::HeaderError(DumpHeadersErrorKind::UknownHeader))?;
 
-    let block: MainChainBlockArc = match header {
+    let block: BlockArc = match header {
         Headers::TransactionBlock => Arc::new(TransactionBlock::parse(&dump[1..])?),
         Headers::SummarizeBlock => Arc::new(SummarizeBlock::parse(&dump[1..])?),
         _ => {
@@ -486,23 +486,23 @@ pub fn deserialize_main_chain_block(dump: &[u8]) -> Result<MainChainBlockArc, Bl
     Ok(block)
 }
 
-pub type MainChainBlockArc = Arc<dyn MainChainBlock + Send + Sync>;
+pub type BlockArc = Arc<dyn Block + Send + Sync>;
 
-impl Eq for dyn MainChainBlock + Send + Sync {}
+impl Eq for dyn Block + Send + Sync {}
 
-impl PartialEq for dyn MainChainBlock + Send + Sync {
+impl PartialEq for dyn Block + Send + Sync {
     fn eq(&self, other: &Self) -> bool {
         self.get_info().timestamp == other.get_info().timestamp
     }
 }
 
-impl PartialOrd for dyn MainChainBlock + Send + Sync {
+impl PartialOrd for dyn Block + Send + Sync {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.get_info().timestamp.cmp(&other.get_info().timestamp))
     }
 }
 
-impl Ord for dyn MainChainBlock + Send + Sync {
+impl Ord for dyn Block + Send + Sync {
     fn cmp(&self, other: &Self) -> Ordering {
         self.get_info().timestamp.cmp(&other.get_info().timestamp)
     }

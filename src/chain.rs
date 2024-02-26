@@ -7,7 +7,7 @@ use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 
 use crate::static_values::*;
 use crate::{
-    block::{self, BasicInfo, MainChainBlock, SummarizeBlock, TransactionBlock},
+    block::{self, BasicInfo, Block, SummarizeBlock, TransactionBlock},
     errors::{BlockChainTreeError, ChainErrorKind},
     merkletree::MerkleTree,
     tools,
@@ -218,7 +218,7 @@ impl MainChain {
     /// Checks for blocks validity, adds it directly to the end of the chain
     pub async fn add_block(
         &self,
-        block: &impl MainChainBlock,
+        block: &impl Block,
     ) -> Result<(), Report<BlockChainTreeError>> {
         let dump = block
             .dump()
@@ -315,7 +315,7 @@ impl MainChain {
     pub async fn find_by_hash(
         &self,
         hash: &[u8; 32],
-    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, Report<BlockChainTreeError>> {
+    ) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>> {
         let dump = self.find_raw_by_hash(hash).await?;
 
         let deserialized = if let Some(data) = dump {
@@ -346,7 +346,7 @@ impl MainChain {
     /// Get deserialized latest block
     pub async fn get_last_block(
         &self,
-    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, Report<BlockChainTreeError>> {
+    ) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>> {
         let dump = self.get_last_raw_block().await?;
 
         let deserialized = if let Some(data) = dump {
@@ -366,7 +366,7 @@ impl MainChain {
     pub async fn find_by_height(
         &self,
         height: &U256,
-    ) -> Result<Option<Arc<dyn MainChainBlock + Send + Sync>>, Report<BlockChainTreeError>> {
+    ) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>> {
         let dump = self.find_raw_by_height(height).await?;
 
         let deserialized = if let Some(data) = dump {
