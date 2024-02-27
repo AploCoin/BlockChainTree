@@ -9,6 +9,7 @@ pub enum Headers {
     TokenBlock = 3,
     SummarizeBlock = 4,
     GenesisBlock = 5,
+    DerivativeBlock = 6
 }
 
 impl Headers {

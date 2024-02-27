@@ -236,6 +236,12 @@ impl TransactionBlock {
     }
 }
 
+#[derive(Debug)]
+pub struct DerivativeBlock {
+    default_info: BasicInfo,
+    payment_transaction: Hash
+}
+
 pub trait Block {
     fn hash(&self) -> Result<Hash, BlockError>;
     fn get_dump_size(&self) -> usize;
@@ -247,6 +253,28 @@ pub trait Block {
     fn get_fee(&self) -> U256;
     fn get_type(&self) -> Headers;
     fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError>;
+}
+
+impl Block for DerivativeBlock {
+    fn get_dump_size(&self) -> usize {
+        self.default_info.get_dump_size() + 32 + 1
+    }
+    fn get_info(&self) -> &BasicInfo {
+        &self.default_info
+    }
+    fn get_type(&self) -> Headers {
+        Headers::DerivativeBlock
+    }
+    fn dump(&self) -> Result<Vec<u8>, BlockError> {
+        let size = self.get_dump_size();
+        let mut to_return = Vec::<u8>::with_capacity(size);
+
+        to_return.push(Headers::DerivativeBlock as u8);
+        to_return.extend(self.payment_transaction.iter());
+        self.default_info.dump(&mut to_return)?;
+
+        Ok(to_return)
+    }
 }
 
 impl Block for TransactionBlock {
