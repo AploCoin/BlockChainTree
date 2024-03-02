@@ -279,7 +279,7 @@ impl Block for DerivativeBlock {
 
 impl DerivativeBlock {
     fn parse(data: &[u8]) -> Result<Self, BlockError> {
-        let mut index: usize = 1; // skip header
+        let mut index: usize = 0; // skip header
         let payment_transaction: Hash = unsafe { data[index..index + 32].try_into().unwrap_unchecked() }; // read payment transaction hash
         index += 32;
         let default_info: BasicInfo = BasicInfo::parse(&data[index..])?;
