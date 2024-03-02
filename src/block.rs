@@ -238,8 +238,8 @@ impl TransactionBlock {
 
 #[derive(Debug)]
 pub struct DerivativeBlock {
-    default_info: BasicInfo,
-    payment_transaction: Hash
+    pub default_info: BasicInfo,
+    pub payment_transaction: Hash
 }
 
 pub trait Block {
@@ -275,10 +275,28 @@ impl Block for DerivativeBlock {
 
         Ok(to_return)
     }
+    fn hash(&self) -> Result<Hash, BlockError> {
+        todo!()
+    }
+    fn get_merkle_root(&self) -> Hash {
+        todo!()
+    }
+    fn verify_block(&self, prev_hash: &Hash) -> bool {
+        todo!()
+    }
+    fn get_founder(&self) -> &Address {
+        todo!()
+    }
+    fn get_fee(&self) -> U256 {
+        todo!()
+    }
+    fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError> {
+        todo!()
+    }
 }
 
 impl DerivativeBlock {
-    fn parse(data: &[u8]) -> Result<Self, BlockError> {
+    pub fn parse(data: &[u8]) -> Result<Self, BlockError> {
         let mut index: usize = 0;
         let payment_transaction: Hash = unsafe { data[index..index + 32].try_into().unwrap_unchecked() }; // read payment transaction hash
         index += 32;
