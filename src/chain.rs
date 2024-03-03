@@ -216,10 +216,7 @@ impl MainChain {
     /// Adds block and sets heigh reference for it
     ///
     /// Checks for blocks validity, adds it directly to the end of the chain
-    pub async fn add_block(
-        &self,
-        block: &impl Block,
-    ) -> Result<(), Report<BlockChainTreeError>> {
+    pub async fn add_block(&self, block: &impl Block) -> Result<(), Report<BlockChainTreeError>> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;

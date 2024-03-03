@@ -239,7 +239,7 @@ impl TransactionBlock {
 #[derive(Debug)]
 pub struct DerivativeBlock {
     pub default_info: BasicInfo,
-    pub payment_transaction: Hash
+    pub payment_transaction: Hash,
 }
 
 pub trait Block {
@@ -307,9 +307,9 @@ impl DerivativeBlock {
         let payment_transaction: Hash = unsafe { data[0..32].try_into().unwrap_unchecked() }; // read payment transaction hash
         index += 32;
         let default_info: BasicInfo = BasicInfo::parse(&data[index..])?;
-        Ok(DerivativeBlock{
+        Ok(DerivativeBlock {
             default_info: default_info,
-            payment_transaction: payment_transaction
+            payment_transaction: payment_transaction,
         })
     }
 }

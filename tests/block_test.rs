@@ -168,16 +168,37 @@ fn dump_parse_derivative_block() {
     let payment_transaction = [0; 32];
     let derivative_block = DerivativeBlock {
         default_info: basic_data,
-        payment_transaction: payment_transaction
+        payment_transaction: payment_transaction,
     };
     let dumped_block = derivative_block.dump().unwrap();
     let parsed_block = DerivativeBlock::parse(&dumped_block[1..].to_vec()).unwrap();
 
-    assert_eq!(derivative_block.default_info.timestamp, parsed_block.default_info.timestamp);
-    assert_eq!(derivative_block.default_info.pow, parsed_block.default_info.pow);
-    assert_eq!(derivative_block.default_info.previous_hash, parsed_block.default_info.previous_hash);
-    assert_eq!(derivative_block.default_info.height, parsed_block.default_info.height);
-    assert_eq!(derivative_block.default_info.difficulty, parsed_block.default_info.difficulty);
-    assert_eq!(derivative_block.default_info.founder, parsed_block.default_info.founder);
-    assert_eq!(derivative_block.payment_transaction, parsed_block.payment_transaction);
+    assert_eq!(
+        derivative_block.default_info.timestamp,
+        parsed_block.default_info.timestamp
+    );
+    assert_eq!(
+        derivative_block.default_info.pow,
+        parsed_block.default_info.pow
+    );
+    assert_eq!(
+        derivative_block.default_info.previous_hash,
+        parsed_block.default_info.previous_hash
+    );
+    assert_eq!(
+        derivative_block.default_info.height,
+        parsed_block.default_info.height
+    );
+    assert_eq!(
+        derivative_block.default_info.difficulty,
+        parsed_block.default_info.difficulty
+    );
+    assert_eq!(
+        derivative_block.default_info.founder,
+        parsed_block.default_info.founder
+    );
+    assert_eq!(
+        derivative_block.payment_transaction,
+        parsed_block.payment_transaction
+    );
 }
