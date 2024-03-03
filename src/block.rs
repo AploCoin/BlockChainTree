@@ -297,6 +297,12 @@ impl Block for DerivativeBlock {
 
 impl DerivativeBlock {
     pub fn parse(data: &[u8]) -> Result<Self, BlockError> {
+        if data.len() < 32 {
+            return Err(
+                Report::new(BlockError::TransactionBlock(TxBlockErrorKind::Parse))
+                    .attach_printable("data.len() < 32"),
+            );
+        }
         let mut index: usize = 0;
         let payment_transaction: Hash = unsafe { data[0..32].try_into().unwrap_unchecked() }; // read payment transaction hash
         index += 32;
