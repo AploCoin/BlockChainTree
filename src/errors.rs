@@ -73,7 +73,7 @@ root_errors![
         BasicInfo(BasicInfoErrorKind),
         TransactionToken(TxTokenErrorKind),
         TransactionBlock(TxBlockErrorKind),
-        TokenBlock(TokenBlockErrorKind),
+        DerivativeBlock(DerivativeBlockErrorKind),
         SummarizeBlock(SummarizeBlockErrorKind),
         HeaderError(DumpHeadersErrorKind),
         NotImplemented(NotImplementedKind)
@@ -128,7 +128,7 @@ sub_errors![
         Dump: "failed to dump",
         Parse: "failed to parse"
     },
-    TokenBlockErrorKind {
+    DerivativeBlockErrorKind {
         Dump: "failed to dump",
         Parse: "failed to parse"
     },

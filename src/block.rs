@@ -299,7 +299,7 @@ impl DerivativeBlock {
     pub fn parse(data: &[u8]) -> Result<Self, BlockError> {
         if data.len() < 32 {
             return Err(
-                Report::new(BlockError::TransactionBlock(TxBlockErrorKind::Parse))
+                Report::new(BlockError::DerivativeBlock(DerivativeBlockErrorKind::Parse))
                     .attach_printable("data.len() < 32"),
             );
         }

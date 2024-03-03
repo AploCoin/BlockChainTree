@@ -6,10 +6,9 @@ pub enum Headers {
     Transaction = 0,
     Token = 1,
     TransactionBlock = 2,
-    TokenBlock = 3,
+    DerivativeBlock = 3,
     SummarizeBlock = 4,
-    GenesisBlock = 5,
-    DerivativeBlock = 6
+    GenesisBlock = 5
 }
 
 impl Headers {
@@ -18,7 +17,7 @@ impl Headers {
             0 => Ok(Headers::Transaction),
             1 => Ok(Headers::Token),
             2 => Ok(Headers::TransactionBlock),
-            3 => Ok(Headers::TokenBlock),
+            3 => Ok(Headers::DerivativeBlock),
             4 => Ok(Headers::SummarizeBlock),
             _ => Err(Report::new(DumpHeadersError::DumpHeadersError(
                 DumpHeadersErrorKind::UknownHeader,
