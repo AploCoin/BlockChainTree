@@ -279,7 +279,7 @@ impl Block for DerivativeBlock {
         Ok(tools::hash(&self.dump()?))
     }
     fn get_merkle_root(&self) -> Hash {
-        todo!()
+        self.payment_transaction
     }
     fn verify_block(&self, prev_hash: &Hash) -> bool {
         todo!()
