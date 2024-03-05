@@ -285,7 +285,7 @@ impl Block for DerivativeBlock {
         self.default_info.previous_hash.eq(prev_hash)
     }
     fn get_founder(&self) -> &Address {
-        todo!()
+        &self.default_info.founder
     }
     fn get_fee(&self) -> U256 {
         todo!()
