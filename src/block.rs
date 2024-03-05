@@ -288,7 +288,7 @@ impl Block for DerivativeBlock {
         &self.default_info.founder
     }
     fn get_fee(&self) -> U256 {
-        todo!()
+        U256::zero()
     }
     fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError> {
         todo!()
