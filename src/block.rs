@@ -276,7 +276,7 @@ impl Block for DerivativeBlock {
         Ok(to_return)
     }
     fn hash(&self) -> Result<Hash, BlockError> {
-        todo!()
+        Ok(tools::hash(&self.dump()?))
     }
     fn get_merkle_root(&self) -> Hash {
         todo!()
