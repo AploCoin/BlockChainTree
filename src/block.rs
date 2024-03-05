@@ -282,7 +282,7 @@ impl Block for DerivativeBlock {
         self.payment_transaction
     }
     fn verify_block(&self, prev_hash: &Hash) -> bool {
-        todo!()
+        self.default_info.previous_hash.eq(prev_hash)
     }
     fn get_founder(&self) -> &Address {
         todo!()
