@@ -291,7 +291,49 @@ impl Block for DerivativeBlock {
         U256::zero()
     }
     fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError> {
-        todo!()
+        if prev_block.is_none() {
+            return Ok(true);
+        }
+        let prev_block = unsafe { prev_block.unwrap_unchecked() };
+        if !self.default_info.previous_hash.eq(&prev_block
+            .hash()
+            .change_context(BlockError::SummarizeBlock(SummarizeBlockErrorKind::Hash))
+            .attach_printable(format!(
+                "Error hashing block with height {}",
+                prev_block.get_info().height
+            ))?)
+        {
+            return Ok(false);
+        }
+
+        let merkle_tree = merkletree::MerkleTree::build_tree(&self.transactions);
+        if !self.merkle_tree_root.eq(merkle_tree.get_root()) {
+            return Ok(false);
+        }
+
+        let mut prev_difficulty = prev_block.get_info().difficulty;
+        recalculate_difficulty(
+            prev_block.get_info().timestamp,
+            self.default_info.timestamp,
+            &mut prev_difficulty,
+        );
+
+        if self.default_info.difficulty != prev_difficulty {
+            return Ok(false);
+        }
+
+        let mut pow: [u8; 32] = [0; 32];
+        self.default_info.pow.to_big_endian(&mut pow);
+
+        if !check_pow(
+            &self.merkle_tree_root,
+            &prev_block.get_info().difficulty,
+            &pow,
+        ) {
+            return Ok(false);
+        }
+
+        Ok(true)
     }
 }
 
