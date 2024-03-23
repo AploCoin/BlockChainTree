@@ -202,3 +202,35 @@ fn dump_parse_derivative_block() {
         parsed_block.payment_transaction
     );
 }
+
+#[test]
+fn validate_derivative_block() {
+    let payment_transaction = [0; 32];
+    let basic_data = block::BasicInfo {
+        timestamp: 160000,
+        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
+        height: U256::from_dec_str("2").unwrap(),
+        difficulty: [101; 32],
+        founder: [6; 33],
+    };
+    let prev_block = DerivativeBlock {
+        default_info: basic_data,
+        payment_transaction: payment_transaction,
+    };
+    let payment_transaction = [0; 32];
+    let basic_data = block::BasicInfo {
+        timestamp: 160000,
+        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
+        height: U256::from_dec_str("2").unwrap(),
+        difficulty: [101; 32],
+        founder: [6; 33],
+    };
+    let derivative_block = DerivativeBlock {
+        default_info: basic_data,
+        payment_transaction: payment_transaction,
+    };
+
+    assert!(!derivative_block.validate(Some(Arc::new(prev_block))).unwrap());
+}
