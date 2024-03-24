@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use blockchaintree::block::{self, MainChainBlock};
+use blockchaintree::block::{self, Block, DerivativeBlock};
 use primitive_types::U256;
 
 #[test]
@@ -153,4 +153,84 @@ fn validate_block_test() {
     );
 
     assert!(!block.validate(Some(Arc::new(prev_block))).unwrap());
+}
+
+#[test]
+fn dump_parse_derivative_block() {
+    let basic_data = block::BasicInfo {
+        timestamp: 160000,
+        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
+        height: U256::from_dec_str("2").unwrap(),
+        difficulty: [101; 32],
+        founder: [6; 33],
+    };
+    let payment_transaction = [0; 32];
+    let derivative_block = DerivativeBlock {
+        default_info: basic_data,
+        payment_transaction: payment_transaction,
+    };
+    let dumped_block = derivative_block.dump().unwrap();
+    let parsed_block = DerivativeBlock::parse(&dumped_block[1..].to_vec()).unwrap();
+
+    assert_eq!(
+        derivative_block.default_info.timestamp,
+        parsed_block.default_info.timestamp
+    );
+    assert_eq!(
+        derivative_block.default_info.pow,
+        parsed_block.default_info.pow
+    );
+    assert_eq!(
+        derivative_block.default_info.previous_hash,
+        parsed_block.default_info.previous_hash
+    );
+    assert_eq!(
+        derivative_block.default_info.height,
+        parsed_block.default_info.height
+    );
+    assert_eq!(
+        derivative_block.default_info.difficulty,
+        parsed_block.default_info.difficulty
+    );
+    assert_eq!(
+        derivative_block.default_info.founder,
+        parsed_block.default_info.founder
+    );
+    assert_eq!(
+        derivative_block.payment_transaction,
+        parsed_block.payment_transaction
+    );
+}
+
+#[test]
+fn validate_derivative_block() {
+    let payment_transaction = [0; 32];
+    let basic_data = block::BasicInfo {
+        timestamp: 160000,
+        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
+        height: U256::from_dec_str("2").unwrap(),
+        difficulty: [101; 32],
+        founder: [6; 33],
+    };
+    let prev_block = DerivativeBlock {
+        default_info: basic_data,
+        payment_transaction: payment_transaction,
+    };
+    let payment_transaction = [0; 32];
+    let basic_data = block::BasicInfo {
+        timestamp: 160000,
+        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
+        height: U256::from_dec_str("2").unwrap(),
+        difficulty: [101; 32],
+        founder: [6; 33],
+    };
+    let derivative_block = DerivativeBlock {
+        default_info: basic_data,
+        payment_transaction: payment_transaction,
+    };
+
+    assert!(!derivative_block.validate(Some(Arc::new(prev_block))).unwrap());
 }
