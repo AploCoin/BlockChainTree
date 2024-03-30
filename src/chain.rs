@@ -1,10 +1,10 @@
 use std::{fs::File, io::Read, path::Path, sync::Arc};
 
+use async_trait::async_trait;
 use error_stack::{Report, ResultExt};
 use primitive_types::U256;
 use sled::Db;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
-use async_trait::async_trait;
 
 use crate::static_values::*;
 use crate::{
@@ -19,13 +19,30 @@ use crate::{
 pub trait Chain {
     async fn dump_config(&self) -> Result<(), Report<BlockChainTreeError>>;
     async fn flush(&self) -> Result<(), Report<BlockChainTreeError>>;
-    async fn add_block(&self, block: &(impl Block + Sync)) -> Result<(), Report<BlockChainTreeError>>;
-    async fn find_raw_by_height(&self, height: &U256) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>>;
-    async fn find_raw_by_hash(&self, hash: &[u8; 32]) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>>;
+    async fn add_block(
+        &self,
+        block: &(impl Block + Sync),
+    ) -> Result<(), Report<BlockChainTreeError>>;
+    async fn find_raw_by_height(
+        &self,
+        height: &U256,
+    ) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>>;
+    async fn find_raw_by_hash(
+        &self,
+        hash: &[u8; 32],
+    ) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>>;
     async fn get_last_raw_block(&self) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>>;
-    async fn get_last_block(&self) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>>;
-    async fn find_by_height(&self, height: &U256) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>>;
-    async fn find_by_hash(&self, hash: &[u8; 32]) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>>;
+    async fn get_last_block(
+        &self,
+    ) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>>;
+    async fn find_by_height(
+        &self,
+        height: &U256,
+    ) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>>;
+    async fn find_by_hash(
+        &self,
+        hash: &[u8; 32],
+    ) -> Result<Option<Arc<dyn Block + Send + Sync>>, Report<BlockChainTreeError>>;
 }
 
 pub struct MainChain {
@@ -149,7 +166,10 @@ impl Chain for MainChain {
     /// Adds block and sets heigh reference for it
     ///
     /// Checks for blocks validity, adds it directly to the end of the chain
-    async fn add_block(&self, block: &(impl Block + Sync)) -> Result<(), Report<BlockChainTreeError>> {
+    async fn add_block(
+        &self,
+        block: &(impl Block + Sync),
+    ) -> Result<(), Report<BlockChainTreeError>> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
