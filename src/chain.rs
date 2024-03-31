@@ -10,6 +10,7 @@ use crate::static_values::*;
 use crate::{
     block::{self, BasicInfo, Block, SummarizeBlock, TransactionBlock},
     errors::{BlockChainTreeError, ChainErrorKind},
+    errors::DerivChainErrorKind,
     merkletree::MerkleTree,
     tools,
     transaction::{Transaction, Transactionable},
@@ -50,6 +51,15 @@ pub struct MainChain {
     height_reference: Db,
     transactions: Db,
     height: Arc<RwLock<U256>>,
+    difficulty: Arc<RwLock<[u8; 32]>>,
+}
+
+pub struct DerivativeChain {
+    db: Db,
+    height_reference: Db,
+    height: u64,
+    global_height: u64,
+    genesis_hash: Arc<RwLock<[u8; 32]>>,
     difficulty: Arc<RwLock<[u8; 32]>>,
 }
 
