@@ -345,8 +345,8 @@ impl DerivativeBlock {
         index += 32;
         let default_info: BasicInfo = BasicInfo::parse(&data[index..])?;
         Ok(DerivativeBlock {
-            default_info: default_info,
-            payment_transaction: payment_transaction,
+            default_info,
+            payment_transaction,
         })
     }
 }

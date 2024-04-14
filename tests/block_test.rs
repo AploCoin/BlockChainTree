@@ -168,7 +168,7 @@ fn dump_parse_derivative_block() {
     let payment_transaction = [0; 32];
     let derivative_block = DerivativeBlock {
         default_info: basic_data,
-        payment_transaction: payment_transaction,
+        payment_transaction,
     };
     let dumped_block = derivative_block.dump().unwrap();
     let parsed_block = DerivativeBlock::parse(&dumped_block[1..].to_vec()).unwrap();
