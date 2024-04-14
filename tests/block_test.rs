@@ -232,5 +232,7 @@ fn validate_derivative_block() {
         payment_transaction: payment_transaction,
     };
 
-    assert!(!derivative_block.validate(Some(Arc::new(prev_block))).unwrap());
+    assert!(!derivative_block
+        .validate(Some(Arc::new(prev_block)))
+        .unwrap());
 }
