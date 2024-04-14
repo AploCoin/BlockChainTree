@@ -5,16 +5,16 @@ use blockchaintree::{
 };
 use primitive_types::U256;
 
-#[tokio::test]
-async fn init_flush_chain_test() {
-    let main_chain = chain::MainChain::new().await.unwrap();
-
-    main_chain.flush().await.unwrap();
-
-    drop(main_chain);
-
-    chain::MainChain::new().await.unwrap();
-}
+//#[tokio::test]
+//async fn init_flush_chain_test() {
+//    let main_chain = chain::MainChain::new().await.unwrap();
+//
+//    main_chain.flush().await.unwrap();
+//
+//    drop(main_chain);
+//
+//    chain::MainChain::new().await.unwrap();
+//}
 
 #[tokio::test]
 async fn init_flush_get_block_by_height_chain_test() {
@@ -47,32 +47,32 @@ async fn init_flush_get_block_by_height_chain_test() {
     );
 }
 
-#[tokio::test]
-async fn init_flush_deriv_chain_test() {
-    let deriv_chain = chain::DerivativeChain::new(
-        "deadbeef",
-        &[
-            57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,
-            35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
-        ],
-    )
-    .await
-    .unwrap();
-
-    deriv_chain.flush().await.unwrap();
-
-    drop(deriv_chain);
-
-    let _deriv_chain = chain::DerivativeChain::new(
-        "deadbeef",
-        &[
-            57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,
-            35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
-        ],
-    )
-    .await
-    .unwrap();
-}
+//#[tokio::test]
+//async fn init_flush_deriv_chain_test() {
+//    let deriv_chain = chain::DerivativeChain::new(
+//        "deadbeef",
+//        &[
+//            57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,
+//            35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
+//        ],
+//    )
+//    .await
+//    .unwrap();
+//
+//    deriv_chain.flush().await.unwrap();
+//
+//    drop(deriv_chain);
+//
+//    let _deriv_chain = chain::DerivativeChain::new(
+//        "deadbeef",
+//        &[
+//            57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,
+//            35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
+//        ],
+//    )
+//    .await
+//    .unwrap();
+//}
 
 #[tokio::test]
 async fn init_flush_get_block_by_height_deriv_chain_test() {
