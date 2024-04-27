@@ -505,9 +505,6 @@ impl DerivativeChain {
 
         Ok(chain)
     }
-}
-
-impl DerivativeChain {
     /// Dump config
     ///
     /// Dumps chain's config
@@ -564,6 +561,57 @@ impl DerivativeChain {
             .attach_printable("failed to flush transactions")?;
 
         Ok(())
+    }
+
+    pub async fn add_transaction(
+        &self,
+        transaction: &impl transaction::Transactionable,
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        let dump = transaction
+            .dump()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))?;
+        self.transactions
+            .insert(tools::hash(&dump), dump)
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))
+            .attach_printable("Failed to insert transaction")?;
+        self.transactions
+            .flush_async()
+            .await
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))
+            .attach_printable("Failed to insert transaction")?;
+        Ok(())
+    }
+
+    pub fn get_transaction_raw(
+        &self,
+        transaction_hash: &[u8; 32],
+    ) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>> {
+        let transaction = self
+            .transactions
+            .get(transaction_hash)
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
+        Ok(transaction.map(|v| v.to_vec()))
+    }
+
+    pub fn get_transaction(
+        &self,
+        transaction_hash: &[u8; 32],
+    ) -> Result<Option<transaction::Transaction>, Report<BlockChainTreeError>> {
+        let raw_transaction = self.get_transaction_raw(transaction_hash)?;
+
+        if let Some(tr) = raw_transaction {
+            return Ok(Some(transaction::Transaction::parse(&tr).change_context(
+                BlockChainTreeError::Chain(ChainErrorKind::FindByHashE),
+            )?));
+        }
+
+        Ok(None)
     }
 
     /// Adds new block to the chain db
