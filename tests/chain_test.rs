@@ -2,19 +2,10 @@ use blockchaintree::{
     block,
     chain::{self, Chain, DerivativeChain},
     static_values::{BEGINNING_DIFFICULTY, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS},
+    tools,
+    transaction::{self, Transactionable},
 };
 use primitive_types::U256;
-
-//#[tokio::test]
-//async fn init_flush_chain_test() {
-//    let main_chain = chain::MainChain::new().await.unwrap();
-//
-//    main_chain.flush().await.unwrap();
-//
-//    drop(main_chain);
-//
-//    chain::MainChain::new().await.unwrap();
-//}
 
 #[tokio::test]
 async fn init_flush_get_block_by_height_chain_test() {
@@ -62,32 +53,37 @@ async fn init_flush_get_block_by_height_chain_test() {
     assert_eq!([0; 32], block.get_merkle_root());
 }
 
-//#[tokio::test]
-//async fn init_flush_deriv_chain_test() {
-//    let deriv_chain = chain::DerivativeChain::new(
-//        "deadbeef",
-//        &[
-//            57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,
-//            35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
-//        ],
-//    )
-//    .await
-//    .unwrap();
-//
-//    deriv_chain.flush().await.unwrap();
-//
-//    drop(deriv_chain);
-//
-//    let _deriv_chain = chain::DerivativeChain::new(
-//        "deadbeef",
-//        &[
-//            57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,
-//            35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
-//        ],
-//    )
-//    .await
-//    .unwrap();
-//}
+#[tokio::test]
+async fn init_get_transaction_chain_test() {
+    let main_chain = chain::MainChain::new().await.unwrap();
+
+    let transaction = transaction::Transaction::new_signed(
+        [10; 33],
+        [20; 33],
+        100,
+        U256::from_dec_str("3627836287").unwrap(),
+        Some(vec![228, 123]),
+        [33; 64],
+    );
+
+    main_chain
+        .add_transactions(&[transaction.clone()])
+        .await
+        .unwrap();
+
+    let got_transaction = main_chain
+        .get_transaction(&tools::hash(&transaction.dump().unwrap()))
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(transaction.get_data(), got_transaction.get_data());
+    assert_eq!(transaction.get_amount(), got_transaction.get_amount());
+    assert_eq!(transaction.get_sender(), got_transaction.get_sender());
+    assert_eq!(transaction.get_receiver(), got_transaction.get_receiver());
+    assert_eq!(transaction.get_dump_size(), got_transaction.get_dump_size());
+    assert_eq!(transaction.get_timestamp(), got_transaction.get_timestamp());
+    assert_eq!(transaction.get_signature(), got_transaction.get_signature());
+}
 
 #[tokio::test]
 async fn init_flush_get_block_by_height_deriv_chain_test() {

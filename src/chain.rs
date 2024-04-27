@@ -7,6 +7,7 @@ use sled::Db;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 
 use crate::block::DerivativeBlock;
+use crate::dump_headers::Headers;
 use crate::{
     block::{self, BasicInfo, Block, SummarizeBlock, TransactionBlock},
     errors::DerivChainErrorKind,
@@ -221,6 +222,15 @@ impl MainChain {
         Ok(())
     }
 
+    pub fn transaction_exists(
+        &self,
+        transaction_hash: &[u8; 32],
+    ) -> Result<bool, Report<BlockChainTreeError>> {
+        self.transactions
+            .contains_key(transaction_hash)
+            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))
+    }
+
     pub fn get_transaction_raw(
         &self,
         transaction_hash: &[u8; 32],
@@ -239,9 +249,13 @@ impl MainChain {
         let raw_transaction = self.get_transaction_raw(transaction_hash)?;
 
         if let Some(tr) = raw_transaction {
-            return Ok(Some(transaction::Transaction::parse(&tr).change_context(
-                BlockChainTreeError::Chain(ChainErrorKind::FindByHashE),
-            )?));
+            if !tr.get(0).unwrap_or(&10).eq(&(Headers::Transaction as u8)) {
+                return Err(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE).into());
+            }
+            return Ok(Some(
+                transaction::Transaction::parse(&tr[1..])
+                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?,
+            ));
         }
 
         Ok(None)
