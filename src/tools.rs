@@ -5,6 +5,7 @@ use error_stack::{Report, Result, ResultExt};
 use num_bigint::BigUint;
 use primitive_types::U256;
 use sha2::{Digest, Sha256};
+use std::cmp::Ordering;
 use std::convert::TryInto;
 use std::fs::File;
 use std::io::Read;
@@ -35,7 +36,7 @@ pub fn dump_u256(number: &U256, buffer: &mut Vec<u8>) -> Result<(), ToolsError> 
     let mut counter: u8 = 0;
 
     for num in number.0.iter().rev() {
-        let bytes = unsafe { transmute::<u64, [u8; 8]>(num.to_be()) };
+        let bytes = num.to_be().to_ne_bytes();
         for byte in bytes {
             if found_non_null {
                 buffer.push(byte);
@@ -216,19 +217,23 @@ pub fn recalculate_difficulty(prev_timestamp: u64, timestamp: u64, prev_difficul
             break;
         };
     }
-    if timestamp - prev_timestamp < TIME_PER_BLOCK {
-        let val = unsafe { prev_difficulty.get_unchecked_mut(non_zero_index) };
-        *val = *val >> 1;
-    } else if timestamp - prev_timestamp > TIME_PER_BLOCK {
-        let mut val = unsafe { prev_difficulty.get_unchecked_mut(non_zero_index) };
-        if non_zero_index == 0 && *val == 0x7f {
-            return;
+    match (timestamp - prev_timestamp).cmp(&TIME_PER_BLOCK) {
+        Ordering::Less => {
+            let val = unsafe { prev_difficulty.get_unchecked_mut(non_zero_index) };
+            *val >>= 1;
         }
-        if *val == 0xFF {
-            val = unsafe { prev_difficulty.get_unchecked_mut(non_zero_index - 1) };
+        Ordering::Greater => {
+            let mut val = unsafe { prev_difficulty.get_unchecked_mut(non_zero_index) };
+            if non_zero_index == 0 && *val == 0x7f {
+                return;
+            }
+            if *val == 0xFF {
+                val = unsafe { prev_difficulty.get_unchecked_mut(non_zero_index - 1) };
+            }
+            *val <<= 1;
+            *val += 1;
         }
-        *val = *val << 1;
-        *val += 1;
+        Ordering::Equal => (),
     }
 }
 

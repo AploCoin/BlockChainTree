@@ -3,10 +3,9 @@ use std::{collections::HashMap, path::Path};
 use crate::{
     chain,
     errors::{BCTreeErrorKind, BlockChainTreeError},
-    tools, txpool,
+    tools,
 };
 use error_stack::{Report, ResultExt};
-use lazy_static::lazy_static;
 use primitive_types::U256;
 use sled::Db;
 

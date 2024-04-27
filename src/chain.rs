@@ -9,12 +9,11 @@ use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 use crate::block::DerivativeBlock;
 use crate::dump_headers::Headers;
 use crate::{
-    block::{self, BasicInfo, Block, SummarizeBlock, TransactionBlock},
-    errors::DerivChainErrorKind,
+    block::{self, BasicInfo, Block, SummarizeBlock},
     errors::{BlockChainTreeError, ChainErrorKind},
     merkletree::MerkleTree,
     tools,
-    transaction::{Transaction, Transactionable},
+    transaction::Transactionable,
 };
 use crate::{static_values::*, transaction};
 
@@ -148,6 +147,7 @@ impl MainChain {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path_config)
             .await
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))?;
@@ -249,7 +249,7 @@ impl MainChain {
         let raw_transaction = self.get_transaction_raw(transaction_hash)?;
 
         if let Some(tr) = raw_transaction {
-            if !tr.get(0).unwrap_or(&10).eq(&(Headers::Transaction as u8)) {
+            if !tr.first().unwrap_or(&10).eq(&(Headers::Transaction as u8)) {
                 return Err(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE).into());
             }
             return Ok(Some(
@@ -329,7 +329,7 @@ impl MainChain {
         height.to_big_endian(&mut height_serialized);
         let mut dump = self
             .blocks
-            .get(&height_serialized)
+            .get(height_serialized)
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
         if let Some(dump) = dump.take() {
@@ -529,6 +529,7 @@ impl DerivativeChain {
         let mut file = OpenOptions::new()
             .write(true)
             .create(true)
+            .truncate(true)
             .open(path_config)
             .await
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))?;
@@ -620,7 +621,7 @@ impl DerivativeChain {
         let raw_transaction = self.get_transaction_raw(transaction_hash)?;
 
         if let Some(tr) = raw_transaction {
-            if !tr.get(0).unwrap_or(&10).eq(&(Headers::Transaction as u8)) {
+            if !tr.first().unwrap_or(&10).eq(&(Headers::Transaction as u8)) {
                 return Err(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE).into());
             }
             return Ok(Some(
@@ -700,7 +701,7 @@ impl DerivativeChain {
         height.to_big_endian(&mut height_serialized);
         let mut dump = self
             .blocks
-            .get(&height_serialized)
+            .get(height_serialized)
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))?;
 
         if let Some(dump) = dump.take() {
@@ -774,7 +775,9 @@ impl DerivativeChain {
             Some(Arc::new(
                 block::DerivativeBlock::parse(&data[1..])
                     .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))
-                    .attach_printable(format!("Failed to deserialize latest main chain block",))?,
+                    .attach_printable(
+                        "Failed to deserialize latest main chain block".to_string(),
+                    )?,
             ))
         } else {
             None
