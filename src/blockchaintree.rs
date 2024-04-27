@@ -95,7 +95,7 @@ impl BlockChainTree {
 
     pub async fn add_amount(
         &self,
-        owner: &[u8; 32],
+        owner: &[u8],
         amount: U256,
     ) -> Result<(), Report<BlockChainTreeError>> {
         self.summary_db
@@ -119,7 +119,7 @@ impl BlockChainTree {
 
     pub async fn sub_amount(
         &self,
-        owner: &[u8; 32],
+        owner: &[u8],
         amount: U256,
     ) -> Result<(), Report<BlockChainTreeError>> {
         self.summary_db
@@ -143,7 +143,7 @@ impl BlockChainTree {
 
         Ok(())
     }
-    pub async fn get_amount(&self, owner: &[u8; 32]) -> Result<U256, Report<BlockChainTreeError>> {
+    pub async fn get_amount(&self, owner: &[u8; 33]) -> Result<U256, Report<BlockChainTreeError>> {
         match self
             .summary_db
             .get(owner)
@@ -159,8 +159,8 @@ impl BlockChainTree {
 
     pub async fn send_amount(
         &self,
-        from: &[u8; 32],
-        to: &[u8; 32],
+        from: &[u8],
+        to: &[u8],
         amount: U256,
     ) -> Result<(), Report<BlockChainTreeError>> {
         self.summary_db
@@ -186,7 +186,7 @@ impl BlockChainTree {
                     db.insert(from, buf)?;
 
                     let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&to_amount));
-                    tools::dump_u256(&from_amount, &mut buf).unwrap();
+                    tools::dump_u256(&to_amount, &mut buf).unwrap();
                     db.insert(to, buf)?;
                     Ok(())
                 },
