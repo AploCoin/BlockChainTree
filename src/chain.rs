@@ -620,9 +620,13 @@ impl DerivativeChain {
         let raw_transaction = self.get_transaction_raw(transaction_hash)?;
 
         if let Some(tr) = raw_transaction {
-            return Ok(Some(transaction::Transaction::parse(&tr).change_context(
-                BlockChainTreeError::Chain(ChainErrorKind::FindByHashE),
-            )?));
+            if !tr.get(0).unwrap_or(&10).eq(&(Headers::Transaction as u8)) {
+                return Err(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE).into());
+            }
+            return Ok(Some(
+                transaction::Transaction::parse(&tr[1..])
+                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?,
+            ));
         }
 
         Ok(None)
