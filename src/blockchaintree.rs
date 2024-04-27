@@ -143,6 +143,19 @@ impl BlockChainTree {
 
         Ok(())
     }
+    pub async fn get_amount(&self, owner: &[u8; 32]) -> Result<U256, Report<BlockChainTreeError>> {
+        match self
+            .summary_db
+            .get(owner)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::GetFunds,
+            ))
+            .attach_printable("failed to read config")?
+        {
+            Some(v) => Ok(tools::load_u256(&v).unwrap().0),
+            None => Ok(U256::zero()),
+        }
+    }
 
     pub async fn send_amount(
         &self,
