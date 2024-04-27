@@ -69,12 +69,12 @@ impl PartialEq for TransactionableItem {
 }
 
 pub trait Transactionable: Send + Sync {
-    fn hash(&self) -> [u8; 32];
     fn hash_without_signature(&self) -> [u8; 32];
 
     fn verify(&self) -> Result<bool, TransactionError>;
 
     fn dump(&self) -> Result<Vec<u8>, TransactionError>;
+    fn hash(&self) -> [u8; 32];
     fn get_dump_size(&self) -> usize;
 
     fn parse(data: &[u8]) -> Result<Self, TransactionError>
@@ -97,6 +97,7 @@ pub struct Transaction {
     signature: [u8; 64],
     amount: U256,
     data: Option<Vec<u8>>,
+    hash: [u8; 32],
 }
 
 impl Transaction {
@@ -145,43 +146,6 @@ impl Transaction {
         signature.serialize_compact()
     }
 
-    pub fn generate_hash(&self) -> [u8; 32] {
-        let mut hasher = Sha256::new();
-
-        let calculated_size: usize = 1
-            + 33
-            + 33
-            + 8
-            + 64
-            + tools::u256_size(&self.amount)
-            + self.data.as_ref().map_or(0, |data| data.len());
-
-        let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
-        concatenated_input.push(Headers::Transaction as u8);
-        for byte in self.sender.iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in self.receiver.iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in self.signature.iter() {
-            concatenated_input.push(*byte);
-        }
-        for byte in self.timestamp.to_be_bytes().iter() {
-            concatenated_input.push(*byte);
-        }
-        tools::dump_u256(&self.amount, &mut concatenated_input)
-            .attach_printable("Error to dump amount")
-            .change_context(TransactionError::Tx(TxErrorKind::Dump))
-            .unwrap();
-        if let Some(data) = self.data.as_ref() {
-            concatenated_input.extend(data.iter());
-        }
-
-        hasher.update(concatenated_input);
-        unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() }
-    }
-
     pub fn new(
         sender: [u8; 33],
         receiver: [u8; 33],
@@ -198,14 +162,18 @@ impl Transaction {
             data.as_deref(),
             &private_key,
         );
-        Transaction {
+        let mut tr = Transaction {
             sender,
             receiver,
             timestamp,
             signature,
             amount,
             data,
-        }
+            hash: [0; 32],
+        };
+        tr.hash = tools::hash(&tr.dump().unwrap());
+
+        tr
     }
 
     pub fn new_signed(
@@ -217,15 +185,18 @@ impl Transaction {
         data: Option<Vec<u8>>,
         signature: [u8; 64],
     ) -> Transaction {
-        Transaction {
-            //hash,
+        let mut tr = Transaction {
             sender,
             receiver,
             timestamp,
             signature,
             amount,
             data,
-        }
+            hash: [0; 32],
+        };
+        tr.hash = tools::hash(&tr.dump().unwrap());
+
+        tr
     }
 
     pub fn get_amount(&self) -> &U256 {
@@ -234,9 +205,6 @@ impl Transaction {
 }
 
 impl Transactionable for Transaction {
-    fn hash(&self) -> [u8; 32] {
-        self.generate_hash()
-    }
     fn hash_without_signature(&self) -> [u8; 32] {
         let mut hasher = Sha256::new();
 
@@ -415,5 +383,9 @@ impl Transactionable for Transaction {
 
     fn get_data(&self) -> Option<&[u8]> {
         self.data.as_deref()
+    }
+
+    fn hash(&self) -> [u8; 32] {
+        self.hash
     }
 }
