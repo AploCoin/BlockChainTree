@@ -59,7 +59,7 @@ impl MerkleTree {
                 }
                 //hasher.reset();
 
-                let hash = Sha256::digest(&to_hash);
+                let hash = Sha256::digest(to_hash);
 
                 *(array_representation.get_unchecked_mut((left_index - 1) / 2)) =
                     hash.as_slice().try_into().unwrap_unchecked();

@@ -1,7 +1,6 @@
 use blockchaintree::{
     block,
-    chain::{self, Chain, DerivativeChain},
-    static_values::{BEGINNING_DIFFICULTY, INCEPTION_TIMESTAMP, ROOT_PUBLIC_ADDRESS},
+    chain,
     tools,
     transaction::{self, Transactionable},
 };
