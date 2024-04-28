@@ -6,7 +6,7 @@ use primitive_types::U256;
 use sled::Db;
 use tokio::{fs::OpenOptions, io::AsyncWriteExt, sync::RwLock};
 
-use crate::block::DerivativeBlock;
+use crate::block::{BlockArc, DerivativeBlock};
 use crate::dump_headers::Headers;
 use crate::{
     block::{self, BasicInfo, Block, SummarizeBlock},
@@ -126,10 +126,10 @@ impl MainChain {
 
             let merkle_tree = MerkleTree::build_tree(&[tools::hash(&initial_amount)]);
             chain
-                .add_block(&SummarizeBlock {
+                .add_block(Arc::new(SummarizeBlock {
                     default_info: info,
                     merkle_tree_root: *merkle_tree.get_root(),
-                })
+                }))
                 .await
                 .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
                 .attach_printable("Failed to insert inception block")?;
@@ -266,10 +266,7 @@ impl MainChain {
     /// Adds block and sets height reference for it
     ///
     /// Checks for blocks validity, adds it directly to the end of the chain
-    pub async fn add_block(
-        &self,
-        block: &(impl Block + Sync),
-    ) -> Result<(), Report<BlockChainTreeError>> {
+    pub async fn add_block(&self, block: BlockArc) -> Result<(), Report<BlockChainTreeError>> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;

@@ -1,7 +1,7 @@
 use std::{collections::HashMap, path::Path};
 
 use crate::{
-    block::TransactionBlock,
+    block::{BlockArc, TransactionBlock},
     chain,
     errors::{BCTreeErrorKind, BlockChainTreeError},
     tools,
@@ -303,14 +303,35 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn new_block(
+    pub async fn add_new_block(
         &self,
-        block: TransactionBlock,
+        block: BlockArc,
         transactions: &[Transaction],
     ) -> Result<(), Report<BlockChainTreeError>> {
-        self.main_chain.add_block(&block).await?;
+        self.main_chain.add_block(block).await?;
 
         self.main_chain.add_transactions(transactions).await
+    }
+
+    pub async fn emmit_new_main_block(
+        &self,
+        pow: &[u8],
+        founder: [u8; 33],
+    ) -> Result<[u8; 33], Report<BlockChainTreeError>> {
+        let last_block = self.main_chain.get_last_block().await?.unwrap(); // practically cannot fail
+
+        if !tools::check_pow(
+            &last_block
+                .hash()
+                .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
+                .attach_printable("failed to hash block")?,
+            &last_block.get_info().difficulty,
+            pow,
+        ) {
+            return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
+        };
+
+        todo!()
     }
 
     pub async fn flush(&self) -> Result<(), Report<BlockChainTreeError>> {

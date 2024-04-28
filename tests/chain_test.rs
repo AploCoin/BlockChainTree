@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use blockchaintree::{
     block, chain, tools,
     transaction::{self, Transactionable},
@@ -32,7 +34,7 @@ async fn init_flush_get_block_by_height_chain_test() {
         vec![[0; 32], [1; 32]],
     );
 
-    main_chain.add_block(&main_block).await.unwrap();
+    main_chain.add_block(Arc::new(main_block)).await.unwrap();
 
     let height = main_chain.get_height().await;
     let block = main_chain.find_by_height(&(height - 1)).await.unwrap();

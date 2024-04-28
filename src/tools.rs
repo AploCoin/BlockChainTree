@@ -183,30 +183,29 @@ pub fn decompress_from_file(filename: String) -> Result<Vec<u8>, ToolsError> {
     Ok(decoded_data)
 }
 
+#[inline]
+pub fn count_leading_zeros(data: &[u8]) -> u32 {
+    let mut to_return = 0u32;
+    for byte in data {
+        let leading_zeros = byte.leading_zeros();
+        to_return += leading_zeros;
+        if leading_zeros < 8 {
+            break;
+        }
+    }
+    to_return
+}
+
 pub fn check_pow(hash: &[u8; 32], difficulty: &[u8; 32], pow: &[u8]) -> bool {
     let mut hasher = Sha256::new();
     hasher.update(hash);
     hasher.update(pow);
-    let result: [u8; 32] = unsafe { hasher.finalize().as_slice().try_into().unwrap_unchecked() };
-    let result: [u64; 4] = unsafe { transmute(result) };
+    let result: [u8; 32] = hasher.finalize().into();
 
-    let difficulty: &[u64; 4] = unsafe { transmute(difficulty) };
-
-    //println!("difficulty: {:?}", difficulty);
-
-    for (r, d) in result.iter().zip(difficulty) {
-        match r.cmp(d) {
-            std::cmp::Ordering::Less => {
-                return true;
-            }
-            std::cmp::Ordering::Equal => {}
-            std::cmp::Ordering::Greater => {
-                return false;
-            }
-        }
+    if count_leading_zeros(difficulty) <= count_leading_zeros(&result) {
+        return true;
     }
-
-    true
+    false
 }
 
 pub fn recalculate_difficulty(prev_timestamp: u64, timestamp: u64, prev_difficulty: &mut Hash) {
@@ -241,8 +240,6 @@ pub fn recalculate_difficulty(prev_timestamp: u64, timestamp: u64, prev_difficul
 mod tests {
 
     use primitive_types::U256;
-
-    
 
     use super::{dump_u256, load_u256, recalculate_difficulty};
 
