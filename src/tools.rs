@@ -242,7 +242,7 @@ mod tests {
 
     use primitive_types::U256;
 
-    use crate::static_values::BEGINNING_DIFFICULTY;
+    
 
     use super::{dump_u256, load_u256, recalculate_difficulty};
 
