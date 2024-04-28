@@ -1,6 +1,6 @@
 use blockchaintree::{
     block,
-    chain::{self, Chain},
+    chain,
     tools,
     transaction::{self, Transactionable},
 };
