@@ -42,23 +42,7 @@ impl Ord for TransactionableItem {
 
 impl PartialOrd for TransactionableItem {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(match self.get_timestamp().cmp(&other.get_timestamp()) {
-            Ordering::Less => Ordering::Greater,
-            Ordering::Equal => {
-                let tr_hash: [u64; 4] = unsafe { transmute(self.hash()) };
-                let other_hash: [u64; 4] = unsafe { transmute(other.hash()) };
-
-                for (left, right) in tr_hash.iter().zip(other_hash.iter()) {
-                    match left.cmp(right) {
-                        Ordering::Less => return Some(Ordering::Greater),
-                        Ordering::Equal => {}
-                        Ordering::Greater => return Some(Ordering::Less),
-                    }
-                }
-                Ordering::Equal
-            }
-            Ordering::Greater => Ordering::Less,
-        })
+        Some(self.cmp(other))
     }
 }
 
