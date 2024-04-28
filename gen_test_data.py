@@ -24,6 +24,11 @@ def total_leading_zeros(hash):
 
     return to_return
 
+def to_hex_list(bt: bytes) -> list:
+    r = []
+    for b in bt:
+        r.append(f'0x{hex(b)[2:].upper()}')
+    return r
 
 def gen(hash, difficulty):
     difficulty = total_leading_zeros(difficulty)
@@ -37,9 +42,9 @@ def gen(hash, difficulty):
         ghash_leadin_zeros = total_leading_zeros(generated_hash)
 
         if ghash_leadin_zeros >= difficulty:
-            print(pow, True)
+            print(', '.join(to_hex_list(pow)), True)
         else:
-            print(pow, False)
+            print(', '.join(to_hex_list(pow)), False)
 
 
 gen(hashlib.sha256(b'text').digest(),
