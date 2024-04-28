@@ -1,7 +1,5 @@
 use blockchaintree::{
-    block,
-    chain,
-    tools,
+    block, chain, tools,
     transaction::{self, Transactionable},
 };
 use primitive_types::U256;
@@ -60,6 +58,7 @@ async fn init_get_transaction_chain_test() {
         [10; 33],
         [20; 33],
         100,
+        U256::from_dec_str("3627836287").unwrap(),
         U256::from_dec_str("3627836287").unwrap(),
         Some(vec![228, 123]),
         [33; 64],

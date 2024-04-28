@@ -80,6 +80,7 @@ pub struct Transaction {
     timestamp: u64,
     signature: [u8; 64],
     amount: U256,
+    gas_amount: U256,
     data: Option<Vec<u8>>,
     hash: [u8; 32],
 }
@@ -90,13 +91,19 @@ impl Transaction {
         receiver: &[u8; 33],
         timestamp: u64,
         amount: &U256,
+        gas_amount: &U256,
         data: Option<&[u8]>,
         private_key: &[u8; 32],
     ) -> [u8; 64] {
         let mut hasher = Sha256::new();
 
-        let calculated_size: usize =
-            1 + 33 + 33 + 8 + tools::u256_size(amount) + data.map_or(0, |data| data.len());
+        let calculated_size: usize = 1
+            + 33
+            + 33
+            + 8
+            + tools::u256_size(amount)
+            + tools::u256_size(gas_amount)
+            + data.map_or(0, |data| data.len());
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
         concatenated_input.push(Headers::Transaction as u8);
@@ -111,6 +118,10 @@ impl Transaction {
         }
         tools::dump_u256(amount, &mut concatenated_input)
             .attach_printable("Error to dump amount")
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))
+            .unwrap();
+        tools::dump_u256(gas_amount, &mut concatenated_input)
+            .attach_printable("Error to dump gas amount")
             .change_context(TransactionError::Tx(TxErrorKind::Dump))
             .unwrap();
         if let Some(data) = data {
@@ -135,6 +146,7 @@ impl Transaction {
         receiver: [u8; 33],
         timestamp: u64,
         amount: U256,
+        gas_amount: U256,
         private_key: [u8; 32],
         data: Option<Vec<u8>>,
     ) -> Transaction {
@@ -143,6 +155,7 @@ impl Transaction {
             &receiver,
             timestamp,
             &amount,
+            &gas_amount,
             data.as_deref(),
             &private_key,
         );
@@ -152,6 +165,7 @@ impl Transaction {
             timestamp,
             signature,
             amount,
+            gas_amount,
             data,
             hash: [0; 32],
         };
@@ -166,6 +180,7 @@ impl Transaction {
         receiver: [u8; 33],
         timestamp: u64,
         amount: U256,
+        gas_amount: U256,
         data: Option<Vec<u8>>,
         signature: [u8; 64],
     ) -> Transaction {
@@ -175,6 +190,7 @@ impl Transaction {
             timestamp,
             signature,
             amount,
+            gas_amount,
             data,
             hash: [0; 32],
         };
@@ -197,6 +213,7 @@ impl Transactionable for Transaction {
             + 33
             + 8
             + tools::u256_size(&self.amount)
+            + tools::u256_size(&self.gas_amount)
             + self.data.as_ref().map_or(0, |data| data.len());
 
         let mut concatenated_input: Vec<u8> = Vec::with_capacity(calculated_size);
@@ -214,6 +231,12 @@ impl Transactionable for Transaction {
             .attach_printable("Error to dump amount")
             .change_context(TransactionError::Tx(TxErrorKind::Dump))
             .unwrap();
+
+        tools::dump_u256(&self.gas_amount, &mut concatenated_input)
+            .attach_printable("Error to dump gas amount")
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))
+            .unwrap();
+
         if let Some(data) = self.data.as_ref() {
             concatenated_input.extend(data.iter());
         }
@@ -279,6 +302,10 @@ impl Transactionable for Transaction {
         tools::dump_u256(&self.amount, &mut transaction_dump)
             .change_context(TransactionError::Tx(TxErrorKind::Dump))?;
 
+        // gas amount
+        tools::dump_u256(&self.gas_amount, &mut transaction_dump)
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))?;
+
         // data
         if let Some(data) = self.data.as_ref() {
             transaction_dump.extend(data.iter());
@@ -293,6 +320,7 @@ impl Transactionable for Transaction {
             + 8
             + 64
             + tools::u256_size(&self.amount)
+            + tools::u256_size(&self.gas_amount)
             + self.data.as_ref().map_or(0, |data| data.len())
     }
 
@@ -327,6 +355,13 @@ impl Transactionable for Transaction {
 
         index += idx + 1;
 
+        // parsing amount
+        let (gas_amount, idx) = tools::load_u256(&data[index..])
+            .attach_printable("Couldn't parse gas amount")
+            .change_context(TransactionError::Tx(TxErrorKind::Parse))?;
+
+        index += idx + 1;
+
         let tx_data = if index == data.len() {
             None
         } else {
@@ -342,7 +377,7 @@ impl Transactionable for Transaction {
         }
 
         Ok(Transaction::new_signed(
-            sender, receiver, timestamp, amount, tx_data, signature,
+            sender, receiver, timestamp, amount, gas_amount, tx_data, signature,
         ))
     }
 

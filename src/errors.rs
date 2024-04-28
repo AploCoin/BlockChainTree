@@ -163,6 +163,7 @@ sub_errors![
         Init: "failed to init the blockchain tree (with config)",
         InitWithoutConfig: "failed to init the blockchain tree (with config)",
         DumpPool: "failed to dump pool",
+        DumpDb: "failed to dump database",
         GetDerivChain: "failed to get the derivative chain",
         CreateDerivChain: "failed to create the derivative chain",
         CheckMainFolders: "failed to check and fix the main folders",

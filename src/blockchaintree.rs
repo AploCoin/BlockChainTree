@@ -1,9 +1,12 @@
 use std::{collections::HashMap, path::Path};
 
 use crate::{
+    block::TransactionBlock,
     chain,
     errors::{BCTreeErrorKind, BlockChainTreeError},
     tools,
+    transaction::Transaction,
+    txpool,
 };
 use error_stack::{Report, ResultExt};
 use primitive_types::U256;
@@ -48,8 +51,8 @@ pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
 pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
 
 pub struct BlockChainTree {
-    main_chain: chain::MainChain,
-    derivative_chains: HashMap<[u8; 32], chain::DerivativeChain>,
+    pub main_chain: chain::MainChain,
+    pub derivative_chains: HashMap<[u8; 32], chain::DerivativeChain>,
     summary_db: Db,
     old_summary_db: Db,
     gas_db: Db,
@@ -149,7 +152,7 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::GetFunds,
             ))
-            .attach_printable("failed to read config")?
+            .attach_printable("failed to get funds")?
         {
             Some(v) => Ok(tools::load_u256(&v).unwrap().0),
             None => Ok(U256::zero()),
@@ -191,6 +194,150 @@ impl BlockChainTree {
                 },
             )
             .unwrap();
+
+        Ok(())
+    }
+
+    pub async fn add_gas_amount(
+        &self,
+        owner: &[u8],
+        amount: U256,
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        self.gas_db
+            .transaction(
+                |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
+                    let prev_amount = match db.get(owner)? {
+                        Some(v) => tools::load_u256(&v).unwrap().0,
+                        None => U256::zero(),
+                    };
+                    let new_amount = prev_amount + amount;
+                    let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&new_amount));
+                    tools::dump_u256(&new_amount, &mut buf).unwrap();
+                    db.insert(owner, buf)?;
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        Ok(())
+    }
+    pub async fn sub_gas_amount(
+        &self,
+        owner: &[u8],
+        amount: U256,
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        self.gas_db
+            .transaction(
+                |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
+                    let prev_amount = match db.get(owner)? {
+                        Some(v) => tools::load_u256(&v).unwrap().0,
+                        None => U256::zero(),
+                    };
+                    if prev_amount < amount {
+                        return Err(sled::transaction::ConflictableTransactionError::Abort(()));
+                    }
+                    let new_amount = prev_amount + amount;
+                    let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&new_amount));
+                    tools::dump_u256(&new_amount, &mut buf).unwrap();
+                    db.insert(owner, buf)?;
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        Ok(())
+    }
+    pub async fn get_gas_amount(
+        &self,
+        owner: &[u8; 33],
+    ) -> Result<U256, Report<BlockChainTreeError>> {
+        match self
+            .gas_db
+            .get(owner)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::GetFunds,
+            ))
+            .attach_printable("failed to get gas amount")?
+        {
+            Some(v) => Ok(tools::load_u256(&v).unwrap().0),
+            None => Ok(U256::zero()),
+        }
+    }
+
+    pub async fn send_gas(
+        &self,
+        from: &[u8],
+        to: &[u8],
+        amount: U256,
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        self.gas_db
+            .transaction(
+                |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
+                    let mut from_amount = match db.get(from)? {
+                        Some(v) => tools::load_u256(&v).unwrap().0,
+                        None => U256::zero(),
+                    };
+                    let mut to_amount = match db.get(to)? {
+                        Some(v) => tools::load_u256(&v).unwrap().0,
+                        None => U256::zero(),
+                    };
+                    if from_amount < amount {
+                        return Err(sled::transaction::ConflictableTransactionError::Abort(()));
+                    }
+
+                    from_amount -= amount;
+                    to_amount += amount;
+
+                    let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&from_amount));
+                    tools::dump_u256(&from_amount, &mut buf).unwrap();
+                    db.insert(from, buf)?;
+
+                    let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&to_amount));
+                    tools::dump_u256(&to_amount, &mut buf).unwrap();
+                    db.insert(to, buf)?;
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        Ok(())
+    }
+
+    pub async fn new_block(
+        &self,
+        block: TransactionBlock,
+        transactions: &[Transaction],
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        self.main_chain.add_block(&block).await?;
+
+        self.main_chain.add_transactions(transactions).await
+    }
+
+    pub async fn flush(&self) -> Result<(), Report<BlockChainTreeError>> {
+        self.main_chain.flush().await?;
+        self.summary_db
+            .flush_async()
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
+            .attach_printable("failed to flush summary db")?;
+
+        self.old_summary_db
+            .flush_async()
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
+            .attach_printable("failed to flush old summary db")?;
+
+        self.gas_db
+            .flush_async()
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
+            .attach_printable("failed to flush old summary db")?;
+
+        self.old_gas_db
+            .flush_async()
+            .await
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
+            .attach_printable("failed to flush old summary db")?;
 
         Ok(())
     }
