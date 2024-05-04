@@ -16,6 +16,7 @@ use crate::{
 use error_stack::{Report, ResultExt};
 use primitive_types::U256;
 use sled::Db;
+use std::fs;
 
 pub struct BlockChainTree {
     pub main_chain: chain::MainChain,
@@ -314,7 +315,7 @@ impl BlockChainTree {
     }
 
     pub async fn emmit_new_main_block(
-        &self,
+        &mut self,
         pow: [u8; 32],
         founder: [u8; 33],
         transactions: &[Hash],
@@ -355,6 +356,7 @@ impl BlockChainTree {
                     default_info,
                     merkle_tree_root,
                 });
+                self.rotate_dbs().await?;
 
                 summarize_block
             } else {
@@ -404,6 +406,61 @@ impl BlockChainTree {
             .await
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
             .attach_printable("failed to flush old summary db")?;
+
+        Ok(())
+    }
+
+    pub async fn rotate_dbs(&mut self) -> Result<(), Report<BlockChainTreeError>> {
+        self.flush().await?;
+
+        let path_summary = Path::new(AMMOUNT_SUMMARY);
+        let path_summary_old = Path::new(OLD_AMMOUNT_SUMMARY);
+        let path_gas = Path::new(GAS_SUMMARY);
+        let path_gas_old = Path::new(OLD_GAS_SUMMARY);
+
+        fs::remove_dir_all(path_summary_old)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to remove previous summary database")?;
+
+        fs::create_dir(path_summary_old)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to create previous summary database folder")?;
+
+        fs::remove_dir_all(path_gas_old)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to remove previous gas database")?;
+
+        fs::create_dir(path_gas_old)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to remove previous gas database folder")?;
+
+        tools::copy_dir_all(path_summary, path_summary_old)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to copy summary database")?;
+
+        tools::copy_dir_all(path_gas, path_gas_old)
+            .change_context(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::MoveSummaryDB,
+            ))
+            .attach_printable("failed to copy gas database")?;
+
+        self.old_summary_db = sled::open(path_summary_old)
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
+            .attach_printable("failed to open old summary db")?;
+
+        self.old_gas_db = sled::open(path_gas_old)
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
+            .attach_printable("failed to open old gas db")?;
 
         Ok(())
     }
