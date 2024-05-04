@@ -6,7 +6,8 @@ use crate::{
     errors::{BCTreeErrorKind, BlockChainTreeError},
     merkletree,
     static_values::{
-        AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, GAS_SUMMARY, OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY,
+        AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, COINS_PER_CYCLE, GAS_SUMMARY, MAIN_CHAIN_PAYMENT,
+        OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
     },
     tools,
     transaction::Transaction,
@@ -19,7 +20,7 @@ use sled::Db;
 use std::fs;
 
 pub struct BlockChainTree {
-    pub main_chain: chain::MainChain,
+    main_chain: chain::MainChain,
     pub derivative_chains: HashMap<[u8; 32], chain::DerivativeChain>,
     summary_db: Db,
     old_summary_db: Db,
@@ -28,7 +29,7 @@ pub struct BlockChainTree {
 }
 
 impl BlockChainTree {
-    pub async fn new() -> Result<Self, Report<BlockChainTreeError>> {
+    pub fn new() -> Result<Self, Report<BlockChainTreeError>> {
         let path_summary = Path::new(AMMOUNT_SUMMARY);
         let path_summary_old = Path::new(OLD_AMMOUNT_SUMMARY);
         let path_gas = Path::new(GAS_SUMMARY);
@@ -52,9 +53,23 @@ impl BlockChainTree {
         let old_gas_db = sled::open(path_gas_old)
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to open old gas db")?;
+        let main_chain = chain::MainChain::new()?;
 
+        if main_chain.get_height() == U256::one() {
+            summary_db
+                .transaction(
+                    |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
+                        let mut buf: Vec<u8> =
+                            Vec::with_capacity(tools::u256_size(&COINS_PER_CYCLE));
+                        tools::dump_u256(&COINS_PER_CYCLE, &mut buf).unwrap();
+                        db.insert(&(ROOT_PUBLIC_ADDRESS) as &[u8], buf)?;
+                        Ok(())
+                    },
+                )
+                .unwrap();
+        }
         Ok(Self {
-            main_chain: chain::MainChain::new().await?,
+            main_chain,
             derivative_chains: HashMap::new(),
             summary_db,
             old_summary_db,
@@ -63,7 +78,11 @@ impl BlockChainTree {
         })
     }
 
-    pub async fn add_amount(
+    pub fn get_main_chain(&self) -> chain::MainChain {
+        self.main_chain.clone()
+    }
+
+    pub fn add_amount(
         &self,
         owner: &[u8],
         amount: U256,
@@ -87,7 +106,26 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn sub_amount(
+    pub fn set_amount(
+        &self,
+        owner: &[u8],
+        amount: U256,
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        self.summary_db
+            .transaction(
+                |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
+                    let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&amount));
+                    tools::dump_u256(&amount, &mut buf).unwrap();
+                    db.insert(owner, buf)?;
+                    Ok(())
+                },
+            )
+            .unwrap();
+
+        Ok(())
+    }
+
+    pub fn sub_amount(
         &self,
         owner: &[u8],
         amount: U256,
@@ -113,7 +151,7 @@ impl BlockChainTree {
 
         Ok(())
     }
-    pub async fn get_amount(&self, owner: &[u8; 33]) -> Result<U256, Report<BlockChainTreeError>> {
+    pub fn get_amount(&self, owner: &[u8; 33]) -> Result<U256, Report<BlockChainTreeError>> {
         match self
             .summary_db
             .get(owner)
@@ -127,7 +165,7 @@ impl BlockChainTree {
         }
     }
 
-    pub async fn send_amount(
+    pub fn send_amount(
         &self,
         from: &[u8],
         to: &[u8],
@@ -166,7 +204,7 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn add_gas_amount(
+    pub fn add_gas_amount(
         &self,
         owner: &[u8],
         amount: U256,
@@ -189,7 +227,7 @@ impl BlockChainTree {
 
         Ok(())
     }
-    pub async fn sub_gas_amount(
+    pub fn sub_gas_amount(
         &self,
         owner: &[u8],
         amount: U256,
@@ -215,10 +253,7 @@ impl BlockChainTree {
 
         Ok(())
     }
-    pub async fn get_gas_amount(
-        &self,
-        owner: &[u8; 33],
-    ) -> Result<U256, Report<BlockChainTreeError>> {
+    pub fn get_gas_amount(&self, owner: &[u8; 33]) -> Result<U256, Report<BlockChainTreeError>> {
         match self
             .gas_db
             .get(owner)
@@ -232,7 +267,7 @@ impl BlockChainTree {
         }
     }
 
-    pub async fn send_gas(
+    pub fn send_gas(
         &self,
         from: &[u8],
         to: &[u8],
@@ -271,14 +306,14 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn add_new_block(
+    pub fn add_new_block(
         &self,
         block: BlockArc,
         transactions: &[Transaction],
     ) -> Result<(), Report<BlockChainTreeError>> {
-        self.main_chain.add_block(block).await?;
+        self.main_chain.add_block(block)?;
 
-        self.main_chain.add_transactions(transactions).await
+        self.main_chain.add_transactions(transactions)
     }
 
     fn summarize(&self) -> Result<[u8; 32], Report<BlockChainTreeError>> {
@@ -316,18 +351,18 @@ impl BlockChainTree {
 
     pub async fn emmit_new_main_block(
         &mut self,
-        pow: [u8; 32],
-        founder: [u8; 33],
+        pow: &[u8; 32],
+        founder: &[u8; 33],
         transactions: &[Hash],
         timestamp: u64,
     ) -> Result<block::BlockArc, Report<BlockChainTreeError>> {
-        let last_block = self.main_chain.get_last_block().await?.unwrap(); // practically cannot fail
+        let last_block = self.main_chain.get_last_block()?.unwrap(); // practically cannot fail
         let prev_hash = last_block
             .hash()
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
             .attach_printable("failed to hash block")?;
 
-        if !tools::check_pow(&prev_hash, &last_block.get_info().difficulty, &pow) {
+        if !tools::check_pow(&prev_hash, &last_block.get_info().difficulty, pow) {
             return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
         };
         let mut difficulty = last_block.get_info().difficulty;
@@ -335,11 +370,11 @@ impl BlockChainTree {
         let fee = tools::recalculate_fee(&difficulty);
         let default_info = block::BasicInfo {
             timestamp,
-            pow,
+            pow: *pow,
             previous_hash: prev_hash,
-            height: last_block.get_info().height,
+            height: last_block.get_info().height + 1,
             difficulty,
-            founder,
+            founder: *founder,
         };
         let new_block: block::BlockArc =
             if ((last_block.get_info().height + 1) % BLOCKS_PER_EPOCH).is_zero() {
@@ -357,6 +392,8 @@ impl BlockChainTree {
                     merkle_tree_root,
                 });
                 self.rotate_dbs().await?;
+
+                self.set_amount(&ROOT_PUBLIC_ADDRESS as &[u8], *COINS_PER_CYCLE)?;
 
                 summarize_block
             } else {
@@ -377,7 +414,7 @@ impl BlockChainTree {
                 transaction_block
             };
 
-        self.main_chain.add_block(new_block.clone()).await?;
+        self.main_chain.add_block(new_block.clone())?;
         Ok(new_block)
     }
 
@@ -410,7 +447,7 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub async fn rotate_dbs(&mut self) -> Result<(), Report<BlockChainTreeError>> {
+    async fn rotate_dbs(&mut self) -> Result<(), Report<BlockChainTreeError>> {
         self.flush().await?;
 
         let path_summary = Path::new(AMMOUNT_SUMMARY);

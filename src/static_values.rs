@@ -40,9 +40,9 @@ pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
 
 pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
 
-pub static BLOCKS_PER_EPOCH: usize = 1000000;
+pub static BLOCKS_PER_EPOCH: usize = 4;
 
-pub static TIME_PER_BLOCK: u64 = 600;
+pub static TIME_PER_BLOCK: u64 = 4;
 
 lazy_static! {
     pub static ref COIN_FRACTIONS: U256 = U256::from_dec_str("1000000000000000000").unwrap();

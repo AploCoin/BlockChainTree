@@ -205,8 +205,6 @@ impl TransactionBlock {
 
         index += fee_size + 1;
 
-        println!("{:?}", data.len() - index);
-
         if (data.len() - index) % 32 != 0 {
             return Err(
                 Report::new(BlockError::TransactionBlock(TxBlockErrorKind::Parse))
