@@ -113,9 +113,9 @@ impl BasicInfo {
         index += 33;
 
         // parsing height
-        let (height, height_size) = tools::load_u256(&data[index..])
+        let (height, _) = tools::load_u256(&data[index..])
             .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Parse))?;
-        index += height_size + 1;
+        //index += height_size + 1;
 
         Ok(BasicInfo {
             timestamp,

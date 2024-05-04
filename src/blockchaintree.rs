@@ -1,56 +1,21 @@
-use std::{collections::HashMap, path::Path};
+use std::{collections::HashMap, path::Path, sync::Arc};
 
 use crate::{
     block::{self, BlockArc, TransactionBlock},
     chain,
     errors::{BCTreeErrorKind, BlockChainTreeError},
-    merkletree, tools,
+    merkletree,
+    static_values::{
+        AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, GAS_SUMMARY, OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY,
+    },
+    tools,
     transaction::Transaction,
     txpool,
+    types::Hash,
 };
 use error_stack::{Report, ResultExt};
 use primitive_types::U256;
 use sled::Db;
-
-static BLOCKCHAIN_DIRECTORY: &str = "./BlockChainTree/";
-
-static AMMOUNT_SUMMARY: &str = "./BlockChainTree/SUMMARY/";
-static OLD_AMMOUNT_SUMMARY: &str = "./BlockChainTree/SUMMARYOLD/";
-
-static GAS_SUMMARY: &str = "./BlockChainTree/GASSUMMARY/";
-static OLD_GAS_SUMMARY: &str = "./BlockChainTree/GASSUMMARYOLD/";
-
-static MAIN_CHAIN_DIRECTORY: &str = "./BlockChainTree/MAIN/";
-
-static DERIVATIVE_CHAINS_DIRECTORY: &str = "./BlockChainTree/DERIVATIVES/";
-static CHAINS_FOLDER: &str = "CHAINS/";
-
-static BLOCKS_FOLDER: &str = "BLOCKS/";
-static REFERENCES_FOLDER: &str = "REF/";
-static TRANSACTIONS_FOLDER: &str = "TRANSACTIONS/";
-
-static CONFIG_FILE: &str = "Chain.config";
-static LOOKUP_TABLE_FILE: &str = "LookUpTable.dat";
-static TRANSACTIONS_POOL: &str = "TRXS_POOL.pool";
-
-pub static BEGINNING_DIFFICULTY: [u8; 32] = [
-    0x7F, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-];
-static MAX_DIFFICULTY: [u8; 32] = [
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 128,
-];
-
-pub static FEE_STEP: u64 = 1000000;
-
-pub static ROOT_PRIVATE_ADDRESS: [u8; 32] = [1u8; 32];
-pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
-    3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96,
-    72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143,
-];
-pub static BLOCKS_PER_EPOCH: u64 = 100000;
-pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
 
 pub struct BlockChainTree {
     pub main_chain: chain::MainChain,
@@ -352,9 +317,9 @@ impl BlockChainTree {
         &self,
         pow: [u8; 32],
         founder: [u8; 33],
-        transactions: &[Transaction],
+        transactions: &[Hash],
         timestamp: u64,
-    ) -> Result<[u8; 32], Report<BlockChainTreeError>> {
+    ) -> Result<block::BlockArc, Report<BlockChainTreeError>> {
         let last_block = self.main_chain.get_last_block().await?.unwrap(); // practically cannot fail
         let prev_hash = last_block
             .hash()
@@ -364,33 +329,54 @@ impl BlockChainTree {
         if !tools::check_pow(&prev_hash, &last_block.get_info().difficulty, &pow) {
             return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
         };
-
+        let mut difficulty = last_block.get_info().difficulty;
+        tools::recalculate_difficulty(last_block.get_info().timestamp, timestamp, &mut difficulty);
+        let fee = tools::recalculate_fee(&difficulty);
         let default_info = block::BasicInfo {
             timestamp,
             pow,
             previous_hash: prev_hash,
             height: last_block.get_info().height,
-            difficulty: last_block.get_info().difficulty,
+            difficulty,
             founder,
         };
-        if ((last_block.get_info().height + 1) % BLOCKS_PER_EPOCH).is_zero() {
-            if transactions.len() != 0 {
-                return Err(BlockChainTreeError::BlockChainTree(
-                    BCTreeErrorKind::SummarizeBlockWrongTransactionsAmount,
-                )
-                .into());
-            }
+        let new_block: block::BlockArc =
+            if ((last_block.get_info().height + 1) % BLOCKS_PER_EPOCH).is_zero() {
+                if transactions.len() != 0 {
+                    return Err(BlockChainTreeError::BlockChainTree(
+                        BCTreeErrorKind::SummarizeBlockWrongTransactionsAmount,
+                    )
+                    .into());
+                }
 
-            let summarized_hash = self.summarize()?;
+                let merkle_tree_root = self.summarize()?;
 
-            //let merkle_tree = merkletree::MerkleTree::build_tree()
-            //block::SummarizeBlock {
-            //    default_info,
-            //    merkle_tree_root: todo!(),
-            //};
-        }
+                let summarize_block = Arc::new(block::SummarizeBlock {
+                    default_info,
+                    merkle_tree_root,
+                });
 
-        todo!()
+                summarize_block
+            } else {
+                if transactions.len() == 0 {
+                    return Err(BlockChainTreeError::BlockChainTree(
+                        BCTreeErrorKind::CreateMainChainBlock,
+                    )
+                    .into());
+                }
+
+                let merkle_tree = merkletree::MerkleTree::build_tree(transactions);
+                let transaction_block = Arc::new(block::TransactionBlock::new(
+                    fee,
+                    default_info,
+                    *merkle_tree.get_root(),
+                    Vec::from_iter(transactions.iter().cloned()),
+                ));
+                transaction_block
+            };
+
+        self.main_chain.add_block(new_block.clone()).await?;
+        Ok(new_block)
     }
 
     pub async fn flush(&self) -> Result<(), Report<BlockChainTreeError>> {

@@ -1,5 +1,5 @@
 use crate::errors::*;
-use crate::static_values::TIME_PER_BLOCK;
+use crate::static_values::{FEE_STEP, TIME_PER_BLOCK};
 use crate::types::Hash;
 use error_stack::{Report, Result, ResultExt};
 use num_bigint::BigUint;
@@ -234,6 +234,12 @@ pub fn recalculate_difficulty(prev_timestamp: u64, timestamp: u64, prev_difficul
         }
         Ordering::Equal => (),
     }
+}
+
+pub fn recalculate_fee(current_difficulty: &Hash) -> U256 {
+    let leading_zeros = count_leading_zeros(current_difficulty);
+
+    FEE_STEP.clone() * leading_zeros
 }
 
 #[cfg(test)]
