@@ -27,7 +27,7 @@ macro_rules! bytes_to_u64 {
 #[derive(Debug, Clone)]
 pub struct BasicInfo {
     pub timestamp: u64,
-    pub pow: U256,
+    pub pow: [u8; 32],
     pub previous_hash: Hash,
     pub height: U256,
     pub difficulty: Hash,
@@ -37,7 +37,7 @@ pub struct BasicInfo {
 impl BasicInfo {
     pub fn new(
         timestamp: u64,
-        pow: U256,
+        pow: [u8; 32],
         previous_hash: Hash,
         height: U256,
         difficulty: Hash,
@@ -54,7 +54,7 @@ impl BasicInfo {
     }
 
     pub fn get_dump_size(&self) -> usize {
-        8 + tools::u256_size(&self.pow) + 32 + tools::u256_size(&self.height) + 32 + 33
+        8 + 32 + 32 + tools::u256_size(&self.height) + 32 + 33
     }
     pub fn dump(&self, buffer: &mut Vec<u8>) -> Result<(), BlockError> {
         // dumping timestamp
@@ -67,6 +67,9 @@ impl BasicInfo {
             buffer.push(*byte);
         }
 
+        // dumping pow
+        buffer.extend(self.pow);
+
         // dumping difficulty
         buffer.extend(self.difficulty);
 
@@ -75,9 +78,6 @@ impl BasicInfo {
 
         // dumping height
         tools::dump_u256(&self.height, buffer).unwrap();
-
-        // dumping PoW
-        tools::dump_u256(&self.pow, buffer).unwrap();
 
         Ok(())
     }
@@ -101,6 +101,10 @@ impl BasicInfo {
         index += 32;
 
         // parsing difficulty
+        let pow: Hash = unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
+        index += 32;
+
+        // parsing difficulty
         let difficulty: Hash = unsafe { data[index..index + 32].try_into().unwrap_unchecked() };
         index += 32;
 
@@ -112,10 +116,6 @@ impl BasicInfo {
         let (height, height_size) = tools::load_u256(&data[index..])
             .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Parse))?;
         index += height_size + 1;
-
-        // parsing POW
-        let (pow, _) = tools::load_u256(&data[index..])
-            .change_context(BlockError::BasicInfo(BasicInfoErrorKind::Parse))?;
 
         Ok(BasicInfo {
             timestamp,
@@ -317,13 +317,10 @@ impl Block for DerivativeBlock {
             return Ok(false);
         }
 
-        let mut pow: [u8; 32] = [0; 32];
-        self.default_info.pow.to_big_endian(&mut pow);
-
         if !check_pow(
             &self.get_merkle_root(),
             &prev_block.get_info().difficulty,
-            &pow,
+            &self.default_info.pow,
         ) {
             return Ok(false);
         }
@@ -413,13 +410,10 @@ impl Block for TransactionBlock {
             return Ok(false);
         }
 
-        let mut pow: [u8; 32] = [0; 32];
-        self.default_info.pow.to_big_endian(&mut pow);
-
         if !check_pow(
             &self.merkle_tree_root,
             &prev_block.get_info().difficulty,
-            &pow,
+            &self.default_info.pow,
         ) {
             return Ok(false);
         }
@@ -547,13 +541,10 @@ impl Block for SummarizeBlock {
             return Ok(false);
         }
 
-        let mut pow: [u8; 32] = [0; 32];
-        self.default_info.pow.to_big_endian(&mut pow);
-
         if !check_pow(
             &self.merkle_tree_root,
             &prev_block.get_info().difficulty,
-            &pow,
+            &self.default_info.pow,
         ) {
             return Ok(false);
         }

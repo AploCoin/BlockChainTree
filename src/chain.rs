@@ -113,7 +113,7 @@ impl MainChain {
         if height.is_zero() {
             let info = BasicInfo::new(
                 INCEPTION_TIMESTAMP,
-                U256::zero(),
+                [0; 32],
                 [0u8; 32],
                 U256::zero(),
                 BEGINNING_DIFFICULTY,
@@ -121,8 +121,10 @@ impl MainChain {
             );
             let mut initial_amount = Vec::<u8>::new();
             initial_amount.extend(ROOT_PUBLIC_ADDRESS.iter());
-            initial_amount.extend([0u8; 32]);
-            COINS_PER_CYCLE.to_big_endian(&mut initial_amount[33..]);
+            initial_amount.push(b'|');
+            initial_amount.extend(COINS_PER_CYCLE.to_string().as_bytes().iter());
+            initial_amount.push(b'|');
+            initial_amount.push(b'0');
 
             let merkle_tree = MerkleTree::build_tree(&[tools::hash(&initial_amount)]);
             chain

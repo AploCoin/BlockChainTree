@@ -174,6 +174,7 @@ sub_errors![
         MoveSummaryDB: "failed to move summary database",
         NewTransaction: "failed to create new transaction",
         CreateMainChainBlock: "failed to create new block for the main chain",
-        WrongPow: "supplied pow does not satisfy requirements"
+        WrongPow: "supplied pow does not satisfy requirements",
+        SummarizeBlockWrongTransactionsAmount: "summarization block should not have transactions"
     }
 ];

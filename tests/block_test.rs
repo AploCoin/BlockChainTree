@@ -7,7 +7,7 @@ use primitive_types::U256;
 fn dump_parse_basic_info() {
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: [5; 32],
         height: U256::from_dec_str("6378216378216387213672813821736").unwrap(),
         difficulty: [101; 32],
@@ -34,7 +34,7 @@ fn dump_parse_basic_info() {
 fn dump_parse_block() {
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: [5; 32],
         height: U256::from_dec_str("6378216378216387213672813821736").unwrap(),
         difficulty: [101; 32],
@@ -81,7 +81,7 @@ fn dump_parse_block() {
 fn dump_parse_summarize_block() {
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: [5; 32],
         height: U256::from_dec_str("6378216378216387213672813821736").unwrap(),
         difficulty: [101; 32],
@@ -124,7 +124,7 @@ fn dump_parse_summarize_block() {
 fn validate_block_test() {
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: [5; 32],
         height: U256::from_dec_str("1").unwrap(),
         difficulty: [101; 32],
@@ -139,7 +139,7 @@ fn validate_block_test() {
 
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: prev_block.hash().unwrap(),
         height: U256::from_dec_str("2").unwrap(),
         difficulty: [101; 32],
@@ -159,7 +159,7 @@ fn validate_block_test() {
 fn dump_parse_derivative_block() {
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
         height: U256::from_dec_str("2").unwrap(),
         difficulty: [101; 32],
@@ -208,7 +208,7 @@ fn validate_derivative_block() {
     let payment_transaction = [0; 32];
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
         height: U256::from_dec_str("2").unwrap(),
         difficulty: [101; 32],
@@ -221,7 +221,7 @@ fn validate_derivative_block() {
     let payment_transaction = [0; 32];
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
         height: U256::from_dec_str("2").unwrap(),
         difficulty: [101; 32],

@@ -21,7 +21,7 @@ async fn init_flush_get_block_by_height_chain_test() {
     // generate block
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("11").unwrap(),
+        pow: [0; 32],
         previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
         height,
         difficulty: [101; 32],
@@ -45,7 +45,7 @@ async fn init_flush_get_block_by_height_chain_test() {
 
     assert_eq!([6; 33], *block.get_founder());
     assert_eq!(160000, block.get_info().timestamp);
-    assert_eq!(U256::from_dec_str("11").unwrap(), block.get_info().pow);
+    assert_eq!([0; 32], block.get_info().pow);
     assert_eq!(height - 1, block.get_info().height);
     assert_eq!([101; 32], block.get_info().difficulty);
     assert_eq!(U256::from_dec_str("1").unwrap(), block.get_fee());
@@ -113,7 +113,7 @@ async fn init_flush_get_block_by_height_deriv_chain_test() {
     // generate block
     let basic_data = block::BasicInfo {
         timestamp: 160000,
-        pow: U256::from_dec_str("10000000000000000000001000000001").unwrap(),
+        pow: [0; 32],
         previous_hash: unsafe { [0; 32].try_into().unwrap_unchecked() },
         height: U256::from_dec_str("0").unwrap(),
         difficulty: [101; 32],

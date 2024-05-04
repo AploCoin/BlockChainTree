@@ -1,10 +1,10 @@
 use std::{collections::HashMap, path::Path};
 
 use crate::{
-    block::{BlockArc, TransactionBlock},
+    block::{self, BlockArc, TransactionBlock},
     chain,
     errors::{BCTreeErrorKind, BlockChainTreeError},
-    tools,
+    merkletree, tools,
     transaction::Transaction,
     txpool,
 };
@@ -42,12 +42,14 @@ static MAX_DIFFICULTY: [u8; 32] = [
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 128,
 ];
 
+pub static FEE_STEP: u64 = 1000000;
+
 pub static ROOT_PRIVATE_ADDRESS: [u8; 32] = [1u8; 32];
 pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
     3, 27, 132, 197, 86, 123, 18, 100, 64, 153, 93, 62, 213, 170, 186, 5, 101, 215, 30, 24, 52, 96,
     72, 25, 255, 156, 23, 245, 233, 213, 221, 7, 143,
 ];
-
+pub static BLOCKS_PER_EPOCH: u64 = 100000;
 pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
 
 pub struct BlockChainTree {
@@ -313,23 +315,80 @@ impl BlockChainTree {
         self.main_chain.add_transactions(transactions).await
     }
 
+    fn summarize(&self) -> Result<[u8; 32], Report<BlockChainTreeError>> {
+        let mut hashes: Vec<[u8; 32]> = Vec::with_capacity(self.summary_db.len());
+        for res in self.summary_db.iter() {
+            let (address, amount) = res
+                .change_context(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::GetFunds,
+                ))
+                .attach_printable("failed to get funds from summary_db")?;
+            let gas_amount = self
+                .gas_db
+                .get(&address)
+                .change_context(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::GetFunds,
+                ))
+                .attach_printable("failed to get funds from summary_db")?
+                .map(|val| val.to_vec())
+                .unwrap_or(Vec::with_capacity(0));
+            let mut data_to_hash: Vec<u8> =
+                Vec::with_capacity(address.len() + amount.len() + gas_amount.len() + 2);
+            data_to_hash.extend(address.iter());
+            data_to_hash.push(b'|');
+            data_to_hash.extend(amount.iter());
+            data_to_hash.push(b'|');
+            data_to_hash.extend(gas_amount.iter());
+
+            hashes.push(tools::hash(&data_to_hash));
+        }
+
+        let merkle_tree = merkletree::MerkleTree::build_tree(&hashes);
+
+        Ok(*merkle_tree.get_root())
+    }
+
     pub async fn emmit_new_main_block(
         &self,
-        pow: &[u8],
+        pow: [u8; 32],
         founder: [u8; 33],
-    ) -> Result<[u8; 33], Report<BlockChainTreeError>> {
+        transactions: &[Transaction],
+        timestamp: u64,
+    ) -> Result<[u8; 32], Report<BlockChainTreeError>> {
         let last_block = self.main_chain.get_last_block().await?.unwrap(); // practically cannot fail
+        let prev_hash = last_block
+            .hash()
+            .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
+            .attach_printable("failed to hash block")?;
 
-        if !tools::check_pow(
-            &last_block
-                .hash()
-                .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
-                .attach_printable("failed to hash block")?,
-            &last_block.get_info().difficulty,
-            pow,
-        ) {
+        if !tools::check_pow(&prev_hash, &last_block.get_info().difficulty, &pow) {
             return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
         };
+
+        let default_info = block::BasicInfo {
+            timestamp,
+            pow,
+            previous_hash: prev_hash,
+            height: last_block.get_info().height,
+            difficulty: last_block.get_info().difficulty,
+            founder,
+        };
+        if ((last_block.get_info().height + 1) % BLOCKS_PER_EPOCH).is_zero() {
+            if transactions.len() != 0 {
+                return Err(BlockChainTreeError::BlockChainTree(
+                    BCTreeErrorKind::SummarizeBlockWrongTransactionsAmount,
+                )
+                .into());
+            }
+
+            let summarized_hash = self.summarize()?;
+
+            //let merkle_tree = merkletree::MerkleTree::build_tree()
+            //block::SummarizeBlock {
+            //    default_info,
+            //    merkle_tree_root: todo!(),
+            //};
+        }
 
         todo!()
     }
