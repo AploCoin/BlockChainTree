@@ -10,7 +10,6 @@ use std::convert::TryInto;
 use std::fs::File;
 use std::io::Read;
 use std::io::Write;
-use std::mem::transmute;
 use std::path::Path;
 use std::{fs, io};
 
@@ -239,7 +238,7 @@ pub fn recalculate_difficulty(prev_timestamp: u64, timestamp: u64, prev_difficul
 pub fn recalculate_fee(current_difficulty: &Hash) -> U256 {
     let leading_zeros = count_leading_zeros(current_difficulty);
 
-    FEE_STEP.clone() * leading_zeros
+    *FEE_STEP * leading_zeros
 }
 
 #[cfg(test)]
