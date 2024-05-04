@@ -1,17 +1,16 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use crate::{
-    block::{self, Block as _, BlockArc, TransactionBlock},
+    block::{self, Block as _, BlockArc},
     chain,
     errors::{BCTreeErrorKind, BlockChainTreeError, ChainErrorKind},
     merkletree,
     static_values::{
-        self, AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, COINS_PER_CYCLE, GAS_SUMMARY, MAIN_CHAIN_PAYMENT,
+        self, AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, COINS_PER_CYCLE, GAS_SUMMARY,
         OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
     },
     tools,
     transaction::Transaction,
-    txpool,
     types::Hash,
 };
 use error_stack::{Report, ResultExt};
@@ -89,7 +88,7 @@ impl BlockChainTree {
         let derivative_chain =
             chain::DerivativeChain::new(&hex::encode(owner), &last_block.hash().unwrap())?;
         self.derivative_chains
-            .insert(owner.clone(), derivative_chain.clone());
+            .insert(*owner, derivative_chain.clone());
         Ok(derivative_chain)
     }
 
@@ -431,7 +430,7 @@ impl BlockChainTree {
         };
         let new_block: block::BlockArc =
             if ((last_block.get_info().height + 1) % BLOCKS_PER_EPOCH).is_zero() {
-                if transactions.len() != 0 {
+                if !transactions.is_empty() {
                     return Err(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::SummarizeBlockWrongTransactionsAmount,
                     )
@@ -450,7 +449,7 @@ impl BlockChainTree {
 
                 summarize_block
             } else {
-                if transactions.len() == 0 {
+                if transactions.is_empty() {
                     return Err(BlockChainTreeError::BlockChainTree(
                         BCTreeErrorKind::CreateMainChainBlock,
                     )
