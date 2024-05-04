@@ -46,7 +46,7 @@ impl MerkleTree {
         }
 
         for left_index in (1..nodes_total - 1).step_by(2).rev() {
-            //let mut hasher = Sha256::new();
+            
             let mut to_hash = [0u8; 32];
             unsafe {
                 for (index, (left, right)) in array_representation
@@ -57,9 +57,8 @@ impl MerkleTree {
                 {
                     *to_hash.get_unchecked_mut(index) = *left & *right;
                 }
-                //hasher.reset();
-
-                let hash = Sha256::digest(&to_hash);
+                
+                let hash = Sha256::digest(to_hash);
 
                 *(array_representation.get_unchecked_mut((left_index - 1) / 2)) =
                     hash.as_slice().try_into().unwrap_unchecked();
@@ -96,7 +95,7 @@ impl MerkleTree {
             let lsb_set = index & 1;
             let lsb_not_set = lsb_set ^ 1;
 
-            // let mut sibling_index = index;
+            
 
             index += lsb_set;
             index -= lsb_not_set;
@@ -152,20 +151,14 @@ impl MerkleTree {
         unsafe { self.array_representation.get_unchecked(0) }
     }
 
-    // pub fn new() -> MerkleTree {
-    //     todo!()
-    // }
-
-    // pub fn add_objects(&mut self, input: &Vec<[u8; 32]>) -> bool {
-    //     todo!()
-    // }
+    
 }
 
 #[cfg(test)]
 mod tests {
     use super::MerkleTree;
     use rand::Rng;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     #[test]
     fn merkle_tree_test() {

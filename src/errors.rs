@@ -73,7 +73,7 @@ root_errors![
         BasicInfo(BasicInfoErrorKind),
         TransactionToken(TxTokenErrorKind),
         TransactionBlock(TxBlockErrorKind),
-        TokenBlock(TokenBlockErrorKind),
+        DerivativeBlock(DerivativeBlockErrorKind),
         SummarizeBlock(SummarizeBlockErrorKind),
         HeaderError(DumpHeadersErrorKind),
         NotImplemented(NotImplementedKind)
@@ -128,7 +128,7 @@ sub_errors![
         Dump: "failed to dump",
         Parse: "failed to parse"
     },
-    TokenBlockErrorKind {
+    DerivativeBlockErrorKind {
         Dump: "failed to dump",
         Parse: "failed to parse"
     },
@@ -163,6 +163,7 @@ sub_errors![
         Init: "failed to init the blockchain tree (with config)",
         InitWithoutConfig: "failed to init the blockchain tree (with config)",
         DumpPool: "failed to dump pool",
+        DumpDb: "failed to dump database",
         GetDerivChain: "failed to get the derivative chain",
         CreateDerivChain: "failed to create the derivative chain",
         CheckMainFolders: "failed to check and fix the main folders",
@@ -173,6 +174,7 @@ sub_errors![
         MoveSummaryDB: "failed to move summary database",
         NewTransaction: "failed to create new transaction",
         CreateMainChainBlock: "failed to create new block for the main chain",
-        WrongPow: "supplied pow does not satisfy requirements"
+        WrongPow: "supplied pow does not satisfy requirements",
+        SummarizeBlockWrongTransactionsAmount: "summarization block should not have transactions"
     }
 ];
