@@ -165,10 +165,9 @@ fn dump_parse_derivative_block() {
         difficulty: [101; 32],
         founder: [6; 33],
     };
-    let payment_transaction = [0; 32];
     let derivative_block = DerivativeBlock {
         default_info: basic_data,
-        payment_transaction,
+        //payment_transaction,
     };
     let dumped_block = derivative_block.dump().unwrap();
     let parsed_block = DerivativeBlock::parse(&dumped_block[1..]).unwrap();
@@ -197,15 +196,10 @@ fn dump_parse_derivative_block() {
         derivative_block.default_info.founder,
         parsed_block.default_info.founder
     );
-    assert_eq!(
-        derivative_block.payment_transaction,
-        parsed_block.payment_transaction
-    );
 }
 
 #[test]
 fn validate_derivative_block() {
-    let payment_transaction = [0; 32];
     let basic_data = block::BasicInfo {
         timestamp: 160000,
         pow: [0; 32],
@@ -216,9 +210,7 @@ fn validate_derivative_block() {
     };
     let prev_block = DerivativeBlock {
         default_info: basic_data,
-        payment_transaction,
     };
-    let payment_transaction = [0; 32];
     let basic_data = block::BasicInfo {
         timestamp: 160000,
         pow: [0; 32],
@@ -229,7 +221,6 @@ fn validate_derivative_block() {
     };
     let derivative_block = DerivativeBlock {
         default_info: basic_data,
-        payment_transaction,
     };
 
     assert!(!derivative_block

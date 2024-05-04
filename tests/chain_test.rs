@@ -8,15 +8,15 @@ use primitive_types::U256;
 
 #[tokio::test]
 async fn init_flush_get_block_by_height_chain_test() {
-    let main_chain = chain::MainChain::new().await.unwrap();
+    let main_chain = chain::MainChain::new().unwrap();
 
     main_chain.flush().await.unwrap();
 
     drop(main_chain);
 
-    let main_chain = chain::MainChain::new().await.unwrap();
+    let main_chain = chain::MainChain::new().unwrap();
 
-    let height = main_chain.get_height().await;
+    let height = main_chain.get_height();
 
     // generate block
     let basic_data = block::BasicInfo {
@@ -34,10 +34,10 @@ async fn init_flush_get_block_by_height_chain_test() {
         vec![[0; 32], [1; 32]],
     );
 
-    main_chain.add_block(Arc::new(main_block)).await.unwrap();
+    main_chain.add_block(Arc::new(main_block)).unwrap();
 
-    let height = main_chain.get_height().await;
-    let block = main_chain.find_by_height(&(height - 1)).await.unwrap();
+    let height = main_chain.get_height();
+    let block = main_chain.find_by_height(&(height - 1)).unwrap();
 
     assert!(block.is_some());
 
@@ -54,7 +54,7 @@ async fn init_flush_get_block_by_height_chain_test() {
 
 #[tokio::test]
 async fn init_get_transaction_chain_test() {
-    let main_chain = chain::MainChain::new().await.unwrap();
+    let main_chain = chain::MainChain::new().unwrap();
 
     let transaction = transaction::Transaction::new_signed(
         [10; 33],
@@ -66,10 +66,7 @@ async fn init_get_transaction_chain_test() {
         [33; 64],
     );
 
-    main_chain
-        .add_transactions(&[transaction.clone()])
-        .await
-        .unwrap();
+    main_chain.add_transactions(&[transaction.clone()]).unwrap();
 
     let got_transaction = main_chain
         .get_transaction(&tools::hash(&transaction.dump().unwrap()))
@@ -94,7 +91,6 @@ async fn init_flush_get_block_by_height_deriv_chain_test() {
             35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
         ],
     )
-    .await
     .unwrap();
 
     deriv_chain.flush().await.unwrap();
@@ -107,7 +103,6 @@ async fn init_flush_get_block_by_height_deriv_chain_test() {
             35, 169, 60, 208, 8, 94, 13, 60, 218, 72, 73, 207, 80,
         ],
     )
-    .await
     .unwrap();
 
     // generate block
@@ -119,14 +114,12 @@ async fn init_flush_get_block_by_height_deriv_chain_test() {
         difficulty: [101; 32],
         founder: [6; 33],
     };
-    let payment_transaction = [0; 32];
     let derivative_block = block::DerivativeBlock {
         default_info: basic_data,
-        payment_transaction,
     };
-    deriv_chain.add_block(&derivative_block).await.unwrap();
+    deriv_chain.add_block(&derivative_block).unwrap();
 
-    let block = deriv_chain.find_by_height(&U256::zero()).await.unwrap();
+    let block = deriv_chain.find_by_height(&U256::zero()).unwrap();
 
     assert!(block.is_some());
 
@@ -152,9 +145,5 @@ async fn init_flush_get_block_by_height_deriv_chain_test() {
     assert_eq!(
         derivative_block.default_info.founder,
         block.default_info.founder
-    );
-    assert_eq!(
-        derivative_block.payment_transaction,
-        block.payment_transaction
     );
 }

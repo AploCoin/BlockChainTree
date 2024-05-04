@@ -237,7 +237,7 @@ impl TransactionBlock {
 #[derive(Debug)]
 pub struct DerivativeBlock {
     pub default_info: BasicInfo,
-    pub payment_transaction: Hash,
+    //pub payment_transaction: Hash,
 }
 
 pub trait Block {
@@ -255,7 +255,7 @@ pub trait Block {
 
 impl Block for DerivativeBlock {
     fn get_dump_size(&self) -> usize {
-        self.default_info.get_dump_size() + 32 + 1
+        self.default_info.get_dump_size() + 1
     }
     fn get_info(&self) -> &BasicInfo {
         &self.default_info
@@ -268,7 +268,6 @@ impl Block for DerivativeBlock {
         let mut to_return = Vec::<u8>::with_capacity(size);
 
         to_return.push(Headers::DerivativeBlock as u8);
-        to_return.extend(self.payment_transaction.iter());
         self.default_info.dump(&mut to_return)?;
 
         Ok(to_return)
@@ -277,7 +276,8 @@ impl Block for DerivativeBlock {
         Ok(tools::hash(&self.dump()?))
     }
     fn get_merkle_root(&self) -> Hash {
-        self.payment_transaction
+        unimplemented!()
+        //self.payment_transaction
     }
     fn verify_block(&self, prev_hash: &Hash) -> bool {
         self.default_info.previous_hash.eq(prev_hash)
@@ -335,13 +335,10 @@ impl DerivativeBlock {
                     .attach_printable("data.len() < 32"),
             );
         }
-        let mut index: usize = 0;
-        let payment_transaction: Hash = unsafe { data[0..32].try_into().unwrap_unchecked() }; // read payment transaction hash
-        index += 32;
-        let default_info: BasicInfo = BasicInfo::parse(&data[index..])?;
+        let default_info: BasicInfo = BasicInfo::parse(data)?;
         Ok(DerivativeBlock {
             default_info,
-            payment_transaction,
+            //payment_transaction,
         })
     }
 }

@@ -416,18 +416,18 @@ impl MainChain {
     }
 }
 
+#[derive(Clone)]
 pub struct DerivativeChain {
     blocks: Db,
     height_reference: Db,
-    transactions: Db,
     height: Arc<RwLock<U256>>,
-    genesis_hash: Arc<[u8; 32]>,
+    pub genesis_hash: Arc<[u8; 32]>,
     difficulty: Arc<RwLock<[u8; 32]>>,
     chain_owner: String,
 }
 
 impl DerivativeChain {
-    pub async fn new(
+    pub fn new(
         chain_owner: &str,
         provided_genesis_hash: &[u8; 32],
     ) -> Result<Self, Report<BlockChainTreeError>> {
@@ -435,12 +435,10 @@ impl DerivativeChain {
 
         let path_blocks_st = root.clone() + BLOCKS_FOLDER;
         let path_references_st = root.clone() + REFERENCES_FOLDER;
-        let path_transactions_st = root.clone() + TRANSACTIONS_FOLDER;
         let path_height_st = root + CONFIG_FILE;
 
         let path_blocks = Path::new(&path_blocks_st);
         let path_reference = Path::new(&path_references_st);
-        let path_transactions = Path::new(&path_transactions_st);
         let path_height = Path::new(&path_height_st);
 
         // open blocks DB
@@ -452,11 +450,6 @@ impl DerivativeChain {
         let height_reference = sled::open(path_reference)
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
             .attach_printable("failed to open references db")?;
-
-        // open transactions DB
-        let transactions = sled::open(path_transactions)
-            .change_context(BlockChainTreeError::Chain(ChainErrorKind::Init))
-            .attach_printable("failed to open transactions db")?;
 
         let file = File::open(path_height);
 
@@ -494,11 +487,15 @@ impl DerivativeChain {
             difficulty: Arc::new(RwLock::new(difficulty)),
             genesis_hash: Arc::new(genesis_hash),
             chain_owner: chain_owner.to_string(),
-            transactions,
         };
 
         Ok(chain)
     }
+
+    pub fn get_height(&self) -> U256 {
+        *self.height.read()
+    }
+
     /// Dump config
     ///
     /// Dumps chain's config
@@ -549,68 +546,7 @@ impl DerivativeChain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to flush height references")?;
 
-        self.transactions
-            .flush_async()
-            .await
-            .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
-            .attach_printable("failed to flush transactions")?;
-
         Ok(())
-    }
-
-    pub async fn add_transaction(
-        &self,
-        transaction: &impl transaction::Transactionable,
-    ) -> Result<(), Report<BlockChainTreeError>> {
-        let dump = transaction
-            .dump()
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::AddingTransaction,
-            ))?;
-        self.transactions
-            .insert(tools::hash(&dump), dump)
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::AddingTransaction,
-            ))
-            .attach_printable("Failed to insert transaction")?;
-        self.transactions
-            .flush_async()
-            .await
-            .change_context(BlockChainTreeError::Chain(
-                ChainErrorKind::AddingTransaction,
-            ))
-            .attach_printable("Failed to insert transaction")?;
-        Ok(())
-    }
-
-    pub fn get_transaction_raw(
-        &self,
-        transaction_hash: &[u8; 32],
-    ) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>> {
-        let transaction = self
-            .transactions
-            .get(transaction_hash)
-            .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
-        Ok(transaction.map(|v| v.to_vec()))
-    }
-
-    pub fn get_transaction(
-        &self,
-        transaction_hash: &[u8; 32],
-    ) -> Result<Option<transaction::Transaction>, Report<BlockChainTreeError>> {
-        let raw_transaction = self.get_transaction_raw(transaction_hash)?;
-
-        if let Some(tr) = raw_transaction {
-            if !tr.first().unwrap_or(&10).eq(&(Headers::Transaction as u8)) {
-                return Err(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE).into());
-            }
-            return Ok(Some(
-                transaction::Transaction::parse(&tr[1..])
-                    .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?,
-            ));
-        }
-
-        Ok(None)
     }
 
     /// Adds new block to the chain db
@@ -618,10 +554,7 @@ impl DerivativeChain {
     /// Adds block and sets heigh reference for it
     ///
     /// Checks for blocks validity, adds it directly to the end of the chain
-    pub async fn add_block(
-        &self,
-        block: &DerivativeBlock,
-    ) -> Result<(), Report<BlockChainTreeError>> {
+    pub fn add_block(&self, block: &DerivativeBlock) -> Result<(), Report<BlockChainTreeError>> {
         let dump = block
             .dump()
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))?;
@@ -630,7 +563,7 @@ impl DerivativeChain {
 
         let mut height = self.height.write();
 
-        if block.get_info().height != *height {
+        if block.get_info().height != *height + 1 {
             return Err(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock)).attach_printable(
                 "The height of the chain is different from the height of the block",
             );
@@ -651,23 +584,11 @@ impl DerivativeChain {
 
         *height += U256::one();
 
-        self.blocks
-            .flush_async()
-            .await
-            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))
-            .attach_printable("Failed to flush blocks db")?;
-
-        self.height_reference
-            .flush_async()
-            .await
-            .change_context(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock))
-            .attach_printable("Failed to flush height reference db")?;
-
         Ok(())
     }
 
     /// Get serialized block by it's height
-    pub async fn find_raw_by_height(
+    pub fn find_raw_by_height(
         &self,
         height: &U256,
     ) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>> {
@@ -691,7 +612,7 @@ impl DerivativeChain {
     }
 
     /// Get serialized block by it's hash
-    pub async fn find_raw_by_hash(
+    pub fn find_raw_by_hash(
         &self,
         hash: &[u8; 32],
     ) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>> {
@@ -708,17 +629,16 @@ impl DerivativeChain {
 
         let block = self
             .find_raw_by_height(&height)
-            .await
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
 
         Ok(block)
     }
 
-    pub async fn find_by_hash(
+    pub fn find_by_hash(
         &self,
         hash: &[u8; 32],
     ) -> Result<Option<Arc<DerivativeBlock>>, Report<BlockChainTreeError>> {
-        let dump = self.find_raw_by_hash(hash).await?;
+        let dump = self.find_raw_by_hash(hash)?;
 
         let deserialized = if let Some(data) = dump {
             Some(Arc::new(
@@ -737,28 +657,29 @@ impl DerivativeChain {
     }
 
     /// Get serialized last block of the chain
-    pub async fn get_last_raw_block(&self) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>> {
+    pub fn get_last_raw_block(&self) -> Result<Option<Vec<u8>>, Report<BlockChainTreeError>> {
         let height = self.height.read();
+        if height.is_zero() {
+            return Ok(None);
+        }
         let last_block_index = *height - 1;
         drop(height);
 
-        self.find_raw_by_height(&last_block_index).await
+        self.find_raw_by_height(&last_block_index)
     }
 
     /// Get deserialized latest block
-    pub async fn get_last_block(
-        &self,
-    ) -> Result<Option<Arc<DerivativeBlock>>, Report<BlockChainTreeError>> {
-        let dump = self.get_last_raw_block().await?;
+    pub fn get_last_block(&self) -> Result<Option<DerivativeBlock>, Report<BlockChainTreeError>> {
+        let dump = self.get_last_raw_block()?;
 
         let deserialized = if let Some(data) = dump {
-            Some(Arc::new(
+            Some(
                 block::DerivativeBlock::parse(&data[1..])
                     .change_context(BlockChainTreeError::Chain(ChainErrorKind::FindByHeight))
                     .attach_printable(
                         "Failed to deserialize latest main chain block".to_string(),
                     )?,
-            ))
+            )
         } else {
             None
         };
@@ -767,11 +688,11 @@ impl DerivativeChain {
     }
 
     /// Get deserialized block by height
-    pub async fn find_by_height(
+    pub fn find_by_height(
         &self,
         height: &U256,
     ) -> Result<Option<Arc<DerivativeBlock>>, Report<BlockChainTreeError>> {
-        let dump = self.find_raw_by_height(height).await?;
+        let dump = self.find_raw_by_height(height)?;
 
         let deserialized = if let Some(data) = dump {
             Some(Arc::new(

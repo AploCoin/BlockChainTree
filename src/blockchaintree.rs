@@ -1,12 +1,12 @@
 use std::{collections::HashMap, path::Path, sync::Arc};
 
 use crate::{
-    block::{self, BlockArc, TransactionBlock},
+    block::{self, Block as _, BlockArc, TransactionBlock},
     chain,
-    errors::{BCTreeErrorKind, BlockChainTreeError},
+    errors::{BCTreeErrorKind, BlockChainTreeError, ChainErrorKind},
     merkletree,
     static_values::{
-        AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, COINS_PER_CYCLE, GAS_SUMMARY, MAIN_CHAIN_PAYMENT,
+        self, AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, COINS_PER_CYCLE, GAS_SUMMARY, MAIN_CHAIN_PAYMENT,
         OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
     },
     tools,
@@ -21,7 +21,7 @@ use std::fs;
 
 pub struct BlockChainTree {
     main_chain: chain::MainChain,
-    pub derivative_chains: HashMap<[u8; 32], chain::DerivativeChain>,
+    derivative_chains: HashMap<[u8; 33], chain::DerivativeChain>,
     summary_db: Db,
     old_summary_db: Db,
     gas_db: Db,
@@ -76,6 +76,21 @@ impl BlockChainTree {
             gas_db,
             old_gas_db,
         })
+    }
+
+    pub fn get_derivative_chain(
+        &mut self,
+        owner: &[u8; 33],
+    ) -> Result<chain::DerivativeChain, Report<BlockChainTreeError>> {
+        if let Some(chain) = self.derivative_chains.get(owner) {
+            return Ok(chain.clone());
+        }
+        let last_block = self.main_chain.get_last_block()?.unwrap(); // practically cannot fail
+        let derivative_chain =
+            chain::DerivativeChain::new(&hex::encode(owner), &last_block.hash().unwrap())?;
+        self.derivative_chains
+            .insert(owner.clone(), derivative_chain.clone());
+        Ok(derivative_chain)
     }
 
     pub fn get_main_chain(&self) -> chain::MainChain {
@@ -204,11 +219,7 @@ impl BlockChainTree {
         Ok(())
     }
 
-    pub fn add_gas_amount(
-        &self,
-        owner: &[u8],
-        amount: U256,
-    ) -> Result<(), Report<BlockChainTreeError>> {
+    pub fn add_gas(&self, owner: &[u8], amount: U256) -> Result<(), Report<BlockChainTreeError>> {
         self.gas_db
             .transaction(
                 |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
@@ -227,11 +238,7 @@ impl BlockChainTree {
 
         Ok(())
     }
-    pub fn sub_gas_amount(
-        &self,
-        owner: &[u8],
-        amount: U256,
-    ) -> Result<(), Report<BlockChainTreeError>> {
+    pub fn sub_gas(&self, owner: &[u8], amount: U256) -> Result<(), Report<BlockChainTreeError>> {
         self.gas_db
             .transaction(
                 |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
@@ -253,7 +260,7 @@ impl BlockChainTree {
 
         Ok(())
     }
-    pub fn get_gas_amount(&self, owner: &[u8; 33]) -> Result<U256, Report<BlockChainTreeError>> {
+    pub fn get_gas(&self, owner: &[u8; 33]) -> Result<U256, Report<BlockChainTreeError>> {
         match self
             .gas_db
             .get(owner)
@@ -349,6 +356,52 @@ impl BlockChainTree {
         Ok(*merkle_tree.get_root())
     }
 
+    pub async fn emmit_new_derivative_block(
+        &mut self,
+        pow: &[u8; 32],
+        founder: &[u8; 33],
+        timestamp: u64,
+    ) -> Result<block::BlockArc, Report<BlockChainTreeError>> {
+        let derivative_chain = self.get_derivative_chain(founder)?;
+        let (prev_hash, mut difficulty, prev_timestamp, height) =
+            if let Some(block) = derivative_chain.get_last_block()? {
+                (
+                    block.hash().unwrap(),
+                    block.get_info().difficulty,
+                    block.get_info().timestamp,
+                    block.get_info().height,
+                )
+            } else {
+                let block = self
+                    .main_chain
+                    .find_by_hash(&derivative_chain.genesis_hash)?
+                    .ok_or(BlockChainTreeError::Chain(ChainErrorKind::FindByHashE))?;
+                (
+                    block.hash().unwrap(),
+                    static_values::BEGINNING_DIFFICULTY,
+                    block.get_info().timestamp,
+                    U256::zero(),
+                )
+            };
+
+        if !tools::check_pow(&prev_hash, &difficulty, pow) {
+            return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
+        };
+        tools::recalculate_difficulty(prev_timestamp, timestamp, &mut difficulty);
+        let default_info = block::BasicInfo {
+            timestamp,
+            pow: *pow,
+            previous_hash: prev_hash,
+            height: height + 1,
+            difficulty,
+            founder: *founder,
+        };
+
+        let block = block::DerivativeBlock { default_info };
+        derivative_chain.add_block(&block)?;
+        Ok(Arc::new(block))
+    }
+
     pub async fn emmit_new_main_block(
         &mut self,
         pow: &[u8; 32],
@@ -362,10 +415,10 @@ impl BlockChainTree {
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::DumpDb))
             .attach_printable("failed to hash block")?;
 
-        if !tools::check_pow(&prev_hash, &last_block.get_info().difficulty, pow) {
+        let mut difficulty = last_block.get_info().difficulty;
+        if !tools::check_pow(&prev_hash, &difficulty, pow) {
             return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
         };
-        let mut difficulty = last_block.get_info().difficulty;
         tools::recalculate_difficulty(last_block.get_info().timestamp, timestamp, &mut difficulty);
         let fee = tools::recalculate_fee(&difficulty);
         let default_info = block::BasicInfo {
