@@ -9,7 +9,10 @@ fn main() {
 
     let mut tree = BlockChainTree::new().unwrap();
 
-    let wallet = [1u8; 33];
+    let wallet: [u8; 33] = [
+        2, 178, 140, 81, 31, 206, 208, 171, 143, 240, 128, 134, 115, 82, 188, 63, 146, 189, 14, 59,
+        85, 8, 11, 28, 137, 161, 145, 216, 251, 95, 93, 137, 159,
+    ];
 
     let chain = tree.get_derivative_chain(&wallet).unwrap();
 
@@ -60,12 +63,14 @@ fn main() {
                     .block_on(tree.emmit_new_derivative_block(&pow, &wallet, timestamp))
                     .unwrap();
 
+                // Node should handle this
                 tree.add_gas(&wallet, *static_values::MAIN_CHAIN_PAYMENT)
                     .unwrap();
 
                 println!("Added new block! {:?}\n", block.hash().unwrap());
 
                 rt.block_on(chain.flush()).unwrap();
+                rt.block_on(tree.flush()).unwrap();
                 break;
             }
             nonce += U256::one();

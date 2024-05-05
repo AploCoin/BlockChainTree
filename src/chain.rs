@@ -218,6 +218,24 @@ impl MainChain {
         Ok(())
     }
 
+    pub fn add_transaction(
+        &self,
+        transaction: &dyn transaction::Transactionable,
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        let dump = transaction
+            .dump()
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))?;
+        self.transactions
+            .insert(tools::hash(&dump), dump)
+            .change_context(BlockChainTreeError::Chain(
+                ChainErrorKind::AddingTransaction,
+            ))
+            .attach_printable("Failed to insert transaction")?;
+        Ok(())
+    }
+
     pub fn transaction_exists(
         &self,
         transaction_hash: &[u8; 32],

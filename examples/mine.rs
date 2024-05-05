@@ -11,7 +11,10 @@ fn main() {
 
     let main_chain = tree.get_main_chain();
 
-    let wallet = [1u8; 33];
+    let wallet: [u8; 33] = [
+        2, 178, 140, 81, 31, 206, 208, 171, 143, 240, 128, 134, 115, 82, 188, 63, 146, 189, 14, 59,
+        85, 8, 11, 28, 137, 161, 145, 216, 251, 95, 93, 137, 159,
+    ];
 
     loop {
         println!("Current height: {}", main_chain.get_height());
@@ -55,12 +58,18 @@ fn main() {
                     .block_on(tree.emmit_new_main_block(&pow, &wallet, transactions, timestamp))
                     .unwrap();
 
+                // Node should handle this
                 tree.send_amount(
                     &static_values::ROOT_PUBLIC_ADDRESS,
                     &wallet,
                     *static_values::MAIN_CHAIN_PAYMENT,
                 )
                 .unwrap();
+
+                let fee = tools::recalculate_fee(&last_block.get_info().difficulty);
+                for _ in transactions {
+                    tree.add_amount(&wallet, fee).unwrap();
+                }
 
                 println!("Added new block! {:?}\n", block.hash().unwrap());
 

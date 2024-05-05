@@ -9,7 +9,6 @@ fn dump_parse_transaction() {
         [20; 33],
         100,
         U256::from_dec_str("3627836287").unwrap(),
-        U256::from_dec_str("3627836287").unwrap(),
         None,
         [33; 64],
     );
@@ -44,7 +43,6 @@ fn hash_transaction() {
         [20; 33],
         100,
         U256::from_dec_str("3627836287").unwrap(),
-        U256::from_dec_str("3627836287").unwrap(),
         None,
         [33; 64],
     );
@@ -63,7 +61,6 @@ fn sign_verify_transaction() {
         public_key.serialize(),
         public_key.serialize(),
         100,
-        U256::from_dec_str("3627836287").unwrap(),
         U256::from_dec_str("3627836287").unwrap(),
         secret_key.secret_bytes(),
         Some(vec![1, 3, 3, 3, 3, 3, 3]),

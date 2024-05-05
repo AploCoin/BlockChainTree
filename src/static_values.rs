@@ -40,14 +40,15 @@ pub static ROOT_PUBLIC_ADDRESS: [u8; 33] = [
 
 pub static INCEPTION_TIMESTAMP: u64 = 1597924800;
 
-pub static BLOCKS_PER_EPOCH: usize = 4;
+pub static BLOCKS_PER_EPOCH: usize = 1000000;
 
-pub static TIME_PER_BLOCK: u64 = 4;
+pub static TIME_PER_BLOCK: u64 = 600;
 
 lazy_static! {
     pub static ref COIN_FRACTIONS: U256 = U256::from_dec_str("1000000000000000000").unwrap();
     pub static ref INITIAL_FEE: U256 = U256::from_dec_str("25000000000000000").unwrap(); // 100_000_000//4
-    pub static ref FEE_STEP: U256 = U256::from_dec_str("625000000000").unwrap(); // 100_000_000//255
+    pub static ref FEE_STEP: U256 = U256::from_dec_str("62500").unwrap(); // 100_000_000//255
     pub static ref MAIN_CHAIN_PAYMENT: U256 = *INITIAL_FEE;
     pub static ref COINS_PER_CYCLE: U256 = (*MAIN_CHAIN_PAYMENT*2000usize*BLOCKS_PER_EPOCH) + *COIN_FRACTIONS*10000usize;
+    pub static ref BYTE_GAS_PRICE: U256 = U256::from_dec_str("625000000000").unwrap();
 }

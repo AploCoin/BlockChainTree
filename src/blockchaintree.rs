@@ -6,11 +6,13 @@ use crate::{
     errors::{BCTreeErrorKind, BlockChainTreeError, ChainErrorKind},
     merkletree,
     static_values::{
-        self, AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, COINS_PER_CYCLE, GAS_SUMMARY,
-        OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
+        self, AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, BYTE_GAS_PRICE, COINS_PER_CYCLE, GAS_SUMMARY,
+        MAIN_CHAIN_PAYMENT, OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
     },
     tools,
     transaction::Transaction,
+    transaction::Transactionable,
+    txpool,
     types::Hash,
 };
 use error_stack::{Report, ResultExt};
@@ -154,7 +156,7 @@ impl BlockChainTree {
                     if prev_amount < amount {
                         return Err(sled::transaction::ConflictableTransactionError::Abort(()));
                     }
-                    let new_amount = prev_amount + amount;
+                    let new_amount = prev_amount - amount;
                     let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&new_amount));
                     tools::dump_u256(&new_amount, &mut buf).unwrap();
                     db.insert(owner, buf)?;
@@ -248,7 +250,7 @@ impl BlockChainTree {
                     if prev_amount < amount {
                         return Err(sled::transaction::ConflictableTransactionError::Abort(()));
                     }
-                    let new_amount = prev_amount + amount;
+                    let new_amount = prev_amount - amount;
                     let mut buf: Vec<u8> = Vec::with_capacity(tools::u256_size(&new_amount));
                     tools::dump_u256(&new_amount, &mut buf).unwrap();
                     db.insert(owner, buf)?;
@@ -468,6 +470,38 @@ impl BlockChainTree {
 
         self.main_chain.add_block(new_block.clone())?;
         Ok(new_block)
+    }
+
+    pub fn send_transaction(
+        &self,
+        transaction: &dyn Transactionable,
+    ) -> Result<(), Report<BlockChainTreeError>> {
+        let sender_gas_amount = self.get_gas(transaction.get_sender())?;
+        let sender_amount = self.get_amount(transaction.get_sender())?;
+        let amount_of_bytes = transaction.get_dump_size();
+        let gas_required = *BYTE_GAS_PRICE * amount_of_bytes;
+        if sender_gas_amount < gas_required {
+            return Err(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("not enough gas for the transaction");
+        }
+        let last_block = self.main_chain.get_last_block()?.unwrap(); // practically cannot fail
+        let fee = tools::recalculate_fee(&last_block.get_info().difficulty);
+        if sender_amount < fee + transaction.get_amount().unwrap_or(U256::zero()) {
+            return Err(BlockChainTreeError::BlockChainTree(
+                BCTreeErrorKind::NewTransaction,
+            ))
+            .attach_printable("not enough coins to pay the fee");
+        }
+        self.main_chain.add_transaction(transaction)?;
+        if let Some(amount) = transaction.get_amount() {
+            // TODO: make into sled transaction
+            self.send_amount(transaction.get_sender(), transaction.get_receiver(), amount)?;
+            self.sub_amount(transaction.get_sender(), fee)?;
+            self.sub_gas(transaction.get_sender(), gas_required)?;
+        }
+        Ok(())
     }
 
     pub async fn flush(&self) -> Result<(), Report<BlockChainTreeError>> {
