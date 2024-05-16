@@ -3,7 +3,7 @@ use primitive_types::U256;
 
 #[tokio::test]
 async fn test_amounts() {
-    let tree = BlockChainTree::new().unwrap();
+    let tree = BlockChainTree::new("./BlockChainTree").unwrap();
 
     let address_a = [0; 33];
     let address_b = [1; 33];

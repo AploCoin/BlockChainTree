@@ -1,17 +1,17 @@
 use lazy_static::lazy_static;
 use primitive_types::U256;
 
-pub static BLOCKCHAIN_DIRECTORY: &str = "./BlockChainTree/";
+//pub static BLOCKCHAIN_DIRECTORY: &str = "./BlockChainTree/";
 
-pub static AMMOUNT_SUMMARY: &str = "./BlockChainTree/SUMMARY/";
-pub static OLD_AMMOUNT_SUMMARY: &str = "./BlockChainTree/SUMMARYOLD/";
+pub static AMOUNT_SUMMARY: &str = "SUMMARY/";
+pub static OLD_AMOUNT_SUMMARY: &str = "SUMMARYOLD/";
 
-pub static GAS_SUMMARY: &str = "./BlockChainTree/GASSUMMARY/";
-pub static OLD_GAS_SUMMARY: &str = "./BlockChainTree/GASSUMMARYOLD/";
+pub static GAS_SUMMARY: &str = "GASSUMMARY/";
+pub static OLD_GAS_SUMMARY: &str = "GASSUMMARYOLD/";
 
-pub static MAIN_CHAIN_DIRECTORY: &str = "./BlockChainTree/MAIN/";
+pub static MAIN_CHAIN_DIRECTORY: &str = "MAIN/";
 
-pub static DERIVATIVE_CHAINS_DIRECTORY: &str = "./BlockChainTree/DERIVATIVES/";
+pub static DERIVATIVE_CHAINS_DIRECTORY: &str = "DERIVATIVES/";
 pub static CHAINS_FOLDER: &str = "CHAINS/";
 
 pub static BLOCKS_FOLDER: &str = "BLOCKS/";

@@ -8,13 +8,13 @@ use primitive_types::U256;
 
 #[tokio::test]
 async fn init_flush_get_block_by_height_chain_test() {
-    let main_chain = chain::MainChain::new().unwrap();
+    let main_chain = chain::MainChain::new("./BlockChainTree").unwrap();
 
     main_chain.flush().await.unwrap();
 
     drop(main_chain);
 
-    let main_chain = chain::MainChain::new().unwrap();
+    let main_chain = chain::MainChain::new("./BlockChainTree").unwrap();
 
     let height = main_chain.get_height();
 
@@ -54,13 +54,12 @@ async fn init_flush_get_block_by_height_chain_test() {
 
 #[tokio::test]
 async fn init_get_transaction_chain_test() {
-    let main_chain = chain::MainChain::new().unwrap();
+    let main_chain = chain::MainChain::new("./BlockChainTree").unwrap();
 
     let transaction = transaction::Transaction::new_signed(
-        [10; 33],
+        [20; 33],
         [20; 33],
         100,
-        U256::from_dec_str("3627836287").unwrap(),
         U256::from_dec_str("3627836287").unwrap(),
         Some(vec![228, 123]),
         [33; 64],
@@ -85,6 +84,7 @@ async fn init_get_transaction_chain_test() {
 #[tokio::test]
 async fn init_flush_get_block_by_height_deriv_chain_test() {
     let deriv_chain = chain::DerivativeChain::new(
+        "./BlockChainTree",
         "deadbeef",
         &[
             57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,
@@ -97,6 +97,7 @@ async fn init_flush_get_block_by_height_deriv_chain_test() {
     drop(deriv_chain);
 
     let deriv_chain = chain::DerivativeChain::new(
+        "./BlockChainTree",
         "deadbeef",
         &[
             57, 26, 43, 126, 188, 137, 234, 205, 234, 97, 128, 221, 242, 186, 198, 206, 3, 25, 250,

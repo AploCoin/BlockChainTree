@@ -94,7 +94,7 @@ impl Transaction {
         //gas_amount: &U256,
         data: Option<&[u8]>,
         private_key: &[u8; 32],
-    ) -> [u8; 64] {
+    ) -> Result<[u8; 64], TransactionError> {
         let mut hasher = Sha256::new();
 
         let calculated_size: usize =
@@ -113,8 +113,7 @@ impl Transaction {
         }
         tools::dump_u256(amount, &mut concatenated_input)
             .attach_printable("Error to dump amount")
-            .change_context(TransactionError::Tx(TxErrorKind::Dump))
-            .unwrap();
+            .change_context(TransactionError::Tx(TxErrorKind::Dump))?;
         if let Some(data) = data {
             concatenated_input.extend(data.iter());
         }
@@ -123,13 +122,15 @@ impl Transaction {
         let result: [u8; 32] = hasher.finalize().as_slice().try_into().unwrap();
         let message = unsafe { Message::from_digest_slice(&result).unwrap_unchecked() };
 
-        let secret_key = unsafe { SecretKey::from_slice(private_key).unwrap_unchecked() };
+        let secret_key = SecretKey::from_slice(private_key)
+            .attach_printable("Error parsing private key")
+            .change_context(TransactionError::Tx(TxErrorKind::Parse))?;
 
         let signer = Secp256k1::new();
 
         let signature = signer.sign_ecdsa(&message, &secret_key);
 
-        signature.serialize_compact()
+        Ok(signature.serialize_compact())
     }
 
     pub fn new(
@@ -139,7 +140,7 @@ impl Transaction {
         amount: U256,
         private_key: [u8; 32],
         data: Option<Vec<u8>>,
-    ) -> Transaction {
+    ) -> Result<Transaction, TransactionError> {
         let signature = Transaction::generate_signature(
             &sender,
             &receiver,
@@ -147,7 +148,7 @@ impl Transaction {
             &amount,
             data.as_deref(),
             &private_key,
-        );
+        )?;
         let mut tr = Transaction {
             sender,
             receiver,
@@ -159,7 +160,7 @@ impl Transaction {
         };
         tr.hash = tools::hash(&tr.dump().unwrap());
 
-        tr
+        Ok(tr)
     }
 
     pub fn new_signed(

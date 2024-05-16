@@ -9,7 +9,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn main() {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    let mut tree = BlockChainTree::new().unwrap();
+    let mut tree = BlockChainTree::new("./BlockChainTree").unwrap();
 
     let main_chain = tree.get_main_chain();
 
@@ -38,7 +38,8 @@ fn main() {
         U256::from_str_radix("228", 10).unwrap(),
         wallet_private,
         None,
-    );
+    )
+    .unwrap();
     let transaction_hash = transaction.hash();
     tree.send_transaction(&transaction).unwrap();
 

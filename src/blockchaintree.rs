@@ -6,8 +6,8 @@ use crate::{
     errors::{BCTreeErrorKind, BlockChainTreeError, ChainErrorKind},
     merkletree,
     static_values::{
-        self, AMMOUNT_SUMMARY, BLOCKS_PER_EPOCH, BYTE_GAS_PRICE, COINS_PER_CYCLE, GAS_SUMMARY,
-        MAIN_CHAIN_PAYMENT, OLD_AMMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
+        self, AMOUNT_SUMMARY, BLOCKS_PER_EPOCH, BYTE_GAS_PRICE, COINS_PER_CYCLE, GAS_SUMMARY,
+        MAIN_CHAIN_PAYMENT, OLD_AMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
     },
     tools,
     transaction::Transaction,
@@ -27,14 +27,17 @@ pub struct BlockChainTree {
     old_summary_db: Db,
     gas_db: Db,
     old_gas_db: Db,
+    root_folder: String,
 }
 
 impl BlockChainTree {
-    pub fn new() -> Result<Self, Report<BlockChainTreeError>> {
-        let path_summary = Path::new(AMMOUNT_SUMMARY);
-        let path_summary_old = Path::new(OLD_AMMOUNT_SUMMARY);
-        let path_gas = Path::new(GAS_SUMMARY);
-        let path_gas_old = Path::new(OLD_GAS_SUMMARY);
+    pub fn new(root_folder: &str) -> Result<Self, Report<BlockChainTreeError>> {
+        let root = Path::new(root_folder);
+
+        let path_summary = root.join(AMOUNT_SUMMARY);
+        let path_summary_old = root.join(OLD_AMOUNT_SUMMARY);
+        let path_gas = root.join(GAS_SUMMARY);
+        let path_gas_old = root.join(OLD_GAS_SUMMARY);
 
         // open summary DB
         let summary_db = sled::open(path_summary)
@@ -54,7 +57,7 @@ impl BlockChainTree {
         let old_gas_db = sled::open(path_gas_old)
             .change_context(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::Init))
             .attach_printable("failed to open old gas db")?;
-        let main_chain = chain::MainChain::new()?;
+        let main_chain = chain::MainChain::new(root_folder)?;
 
         if main_chain.get_height() == U256::one() {
             summary_db
@@ -76,6 +79,7 @@ impl BlockChainTree {
             old_summary_db,
             gas_db,
             old_gas_db,
+            root_folder: root_folder.into(),
         })
     }
 
@@ -87,8 +91,11 @@ impl BlockChainTree {
             return Ok(chain.clone());
         }
         let last_block = self.main_chain.get_last_block()?.unwrap(); // practically cannot fail
-        let derivative_chain =
-            chain::DerivativeChain::new(&hex::encode(owner), &last_block.hash().unwrap())?;
+        let derivative_chain = chain::DerivativeChain::new(
+            &self.root_folder,
+            &hex::encode(owner),
+            &last_block.hash().unwrap(),
+        )?;
         self.derivative_chains
             .insert(*owner, derivative_chain.clone());
         Ok(derivative_chain)
@@ -370,7 +377,7 @@ impl BlockChainTree {
                     block.hash().unwrap(),
                     block.get_info().difficulty,
                     block.get_info().timestamp,
-                    block.get_info().height,
+                    block.get_info().height + 1,
                 )
             } else {
                 let block = self
@@ -393,7 +400,7 @@ impl BlockChainTree {
             timestamp,
             pow: *pow,
             previous_hash: prev_hash,
-            height: height + 1,
+            height,
             difficulty,
             founder: *founder,
         };
@@ -536,42 +543,44 @@ impl BlockChainTree {
     async fn rotate_dbs(&mut self) -> Result<(), Report<BlockChainTreeError>> {
         self.flush().await?;
 
-        let path_summary = Path::new(AMMOUNT_SUMMARY);
-        let path_summary_old = Path::new(OLD_AMMOUNT_SUMMARY);
-        let path_gas = Path::new(GAS_SUMMARY);
-        let path_gas_old = Path::new(OLD_GAS_SUMMARY);
+        let root = Path::new(&self.root_folder);
 
-        fs::remove_dir_all(path_summary_old)
+        let path_summary = root.join(AMOUNT_SUMMARY);
+        let path_summary_old = root.join(OLD_AMOUNT_SUMMARY);
+        let path_gas = root.join(GAS_SUMMARY);
+        let path_gas_old = root.join(OLD_GAS_SUMMARY);
+
+        fs::remove_dir_all(&path_summary_old)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to remove previous summary database")?;
 
-        fs::create_dir(path_summary_old)
+        fs::create_dir(&path_summary_old)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to create previous summary database folder")?;
 
-        fs::remove_dir_all(path_gas_old)
+        fs::remove_dir_all(&path_gas_old)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to remove previous gas database")?;
 
-        fs::create_dir(path_gas_old)
+        fs::create_dir(&path_gas_old)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to remove previous gas database folder")?;
 
-        tools::copy_dir_all(path_summary, path_summary_old)
+        tools::copy_dir_all(path_summary, &path_summary_old)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))
             .attach_printable("failed to copy summary database")?;
 
-        tools::copy_dir_all(path_gas, path_gas_old)
+        tools::copy_dir_all(path_gas, &path_gas_old)
             .change_context(BlockChainTreeError::BlockChainTree(
                 BCTreeErrorKind::MoveSummaryDB,
             ))

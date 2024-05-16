@@ -55,16 +55,17 @@ pub struct MainChain {
     transactions: Db,
     height: Arc<RwLock<U256>>,
     difficulty: Arc<RwLock<[u8; 32]>>,
+    root: String,
 }
 
 impl MainChain {
-    pub fn new() -> Result<Self, Report<BlockChainTreeError>> {
-        let root = String::from(MAIN_CHAIN_DIRECTORY);
+    pub fn new(root: &str) -> Result<Self, Report<BlockChainTreeError>> {
+        let root = Path::new(root).join(MAIN_CHAIN_DIRECTORY);
 
-        let path_blocks_st = root.clone() + BLOCKS_FOLDER;
-        let path_references_st = root.clone() + REFERENCES_FOLDER;
-        let path_transactions_st = root.clone() + TRANSACTIONS_FOLDER;
-        let path_height_st = root + CONFIG_FILE;
+        let path_blocks_st = root.join(BLOCKS_FOLDER);
+        let path_references_st = root.join(REFERENCES_FOLDER);
+        let path_transactions_st = root.join(TRANSACTIONS_FOLDER);
+        let path_height_st = root.join(CONFIG_FILE);
 
         let path_blocks = Path::new(&path_blocks_st);
         let path_reference = Path::new(&path_references_st);
@@ -111,6 +112,7 @@ impl MainChain {
             transactions,
             height: Arc::new(RwLock::new(height)),
             difficulty: Arc::new(RwLock::new(difficulty)),
+            root: root.to_str().unwrap().to_string(),
         };
         if height.is_zero() {
             let info = BasicInfo::new(
@@ -144,8 +146,7 @@ impl MainChain {
     ///
     /// Dumps chain's config
     async fn dump_config(&self) -> Result<(), Report<BlockChainTreeError>> {
-        let root = String::from(MAIN_CHAIN_DIRECTORY);
-        let path_config = root + CONFIG_FILE;
+        let path_config = Path::new(&self.root).join(CONFIG_FILE);
 
         let mut file = OpenOptions::new()
             .write(true)
@@ -442,18 +443,22 @@ pub struct DerivativeChain {
     pub genesis_hash: Arc<[u8; 32]>,
     difficulty: Arc<RwLock<[u8; 32]>>,
     chain_owner: String,
+    root: String,
 }
 
 impl DerivativeChain {
     pub fn new(
+        root: &str,
         chain_owner: &str,
         provided_genesis_hash: &[u8; 32],
     ) -> Result<Self, Report<BlockChainTreeError>> {
-        let root = String::from(DERIVATIVE_CHAINS_DIRECTORY) + chain_owner + "/";
+        let root = Path::new(root)
+            .join(DERIVATIVE_CHAINS_DIRECTORY)
+            .join(chain_owner);
 
-        let path_blocks_st = root.clone() + BLOCKS_FOLDER;
-        let path_references_st = root.clone() + REFERENCES_FOLDER;
-        let path_height_st = root + CONFIG_FILE;
+        let path_blocks_st = root.join(BLOCKS_FOLDER);
+        let path_references_st = root.join(REFERENCES_FOLDER);
+        let path_height_st = root.join(CONFIG_FILE);
 
         let path_blocks = Path::new(&path_blocks_st);
         let path_reference = Path::new(&path_references_st);
@@ -505,6 +510,7 @@ impl DerivativeChain {
             difficulty: Arc::new(RwLock::new(difficulty)),
             genesis_hash: Arc::new(genesis_hash),
             chain_owner: chain_owner.to_string(),
+            root: root.to_str().unwrap().to_string(),
         };
 
         Ok(chain)
@@ -518,8 +524,7 @@ impl DerivativeChain {
     ///
     /// Dumps chain's config
     async fn dump_config(&self) -> Result<(), Report<BlockChainTreeError>> {
-        let root = String::from(DERIVATIVE_CHAINS_DIRECTORY) + &self.chain_owner + "/";
-        let path_config = root + CONFIG_FILE;
+        let path_config = Path::new(&self.root).join(CONFIG_FILE);
 
         let mut file = OpenOptions::new()
             .write(true)
@@ -581,7 +586,8 @@ impl DerivativeChain {
 
         let mut height = self.height.write();
 
-        if block.get_info().height != *height + 1 {
+        if block.get_info().height != *height {
+            println!("{} {}", block.get_info().height, *height);
             return Err(BlockChainTreeError::Chain(ChainErrorKind::AddingBlock)).attach_printable(
                 "The height of the chain is different from the height of the block",
             );

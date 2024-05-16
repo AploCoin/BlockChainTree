@@ -5,7 +5,7 @@ use secp256k1::Secp256k1;
 #[test]
 fn dump_parse_transaction() {
     let transaction = transaction::Transaction::new_signed(
-        [10; 33],
+        [0; 33],
         [20; 33],
         100,
         U256::from_dec_str("3627836287").unwrap(),
@@ -64,7 +64,8 @@ fn sign_verify_transaction() {
         U256::from_dec_str("3627836287").unwrap(),
         secret_key.secret_bytes(),
         Some(vec![1, 3, 3, 3, 3, 3, 3]),
-    );
+    )
+    .unwrap();
 
     assert!(transaction.verify().unwrap());
 }

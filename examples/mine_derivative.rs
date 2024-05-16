@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 fn main() {
     let rt = tokio::runtime::Runtime::new().unwrap();
 
-    let mut tree = BlockChainTree::new().unwrap();
+    let mut tree = BlockChainTree::new("./BlockChainTree").unwrap();
 
     let wallet: [u8; 33] = [
         2, 178, 140, 81, 31, 206, 208, 171, 143, 240, 128, 134, 115, 82, 188, 63, 146, 189, 14, 59,
