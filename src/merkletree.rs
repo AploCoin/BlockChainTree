@@ -46,7 +46,6 @@ impl MerkleTree {
         }
 
         for left_index in (1..nodes_total - 1).step_by(2).rev() {
-            
             let mut to_hash = [0u8; 32];
             unsafe {
                 for (index, (left, right)) in array_representation
@@ -57,7 +56,7 @@ impl MerkleTree {
                 {
                     *to_hash.get_unchecked_mut(index) = *left & *right;
                 }
-                
+
                 let hash = Sha256::digest(to_hash);
 
                 *(array_representation.get_unchecked_mut((left_index - 1) / 2)) =
@@ -94,8 +93,6 @@ impl MerkleTree {
         while index > 0 {
             let lsb_set = index & 1;
             let lsb_not_set = lsb_set ^ 1;
-
-            
 
             index += lsb_set;
             index -= lsb_not_set;
@@ -150,8 +147,6 @@ impl MerkleTree {
     pub fn get_root(&self) -> &[u8; 32] {
         unsafe { self.array_representation.get_unchecked(0) }
     }
-
-    
 }
 
 #[cfg(test)]
