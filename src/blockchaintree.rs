@@ -7,12 +7,11 @@ use crate::{
     merkletree,
     static_values::{
         self, AMOUNT_SUMMARY, BLOCKS_PER_EPOCH, BYTE_GAS_PRICE, COINS_PER_CYCLE, GAS_SUMMARY,
-        MAIN_CHAIN_PAYMENT, OLD_AMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
+        OLD_AMOUNT_SUMMARY, OLD_GAS_SUMMARY, ROOT_PUBLIC_ADDRESS,
     },
     tools,
     transaction::Transaction,
     transaction::Transactionable,
-    txpool,
     types::Hash,
 };
 use error_stack::{Report, ResultExt};

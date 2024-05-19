@@ -162,7 +162,8 @@ impl MainChain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write height")?;
 
-        file.write_all(self.difficulty.read().as_ref())
+        let difficulty = *self.difficulty.read();
+        file.write_all(&difficulty)
             .await
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write difficulty")?;
@@ -540,7 +541,8 @@ impl DerivativeChain {
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write height")?;
 
-        file.write_all(self.difficulty.read().as_ref())
+        let difficulty = *self.difficulty.read();
+        file.write_all(&difficulty)
             .await
             .change_context(BlockChainTreeError::Chain(ChainErrorKind::DumpConfig))
             .attach_printable("failed to write difficulty")?;
