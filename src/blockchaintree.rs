@@ -507,7 +507,7 @@ impl BlockChainTree {
         if let Some(amount) = transaction.get_amount() {
             // TODO: make into sled transaction
             self.send_amount(transaction.get_sender(), transaction.get_receiver(), amount)?;
-            self.sub_amount(transaction.get_sender(), fee)?;
+            //self.sub_amount(transaction.get_sender(), fee)?;
             self.sub_gas(transaction.get_sender(), gas_required)?;
         }
         Ok(())
