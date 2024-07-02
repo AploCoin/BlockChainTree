@@ -193,6 +193,9 @@ impl BlockChainTree {
         to: &[u8],
         amount: U256,
     ) -> Result<(), Report<BlockChainTreeError>> {
+        if from == to {
+            return Ok(());
+        }
         self.summary_db
             .transaction(
                 |db| -> Result<(), sled::transaction::ConflictableTransactionError<()>> {
