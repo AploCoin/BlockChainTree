@@ -251,6 +251,7 @@ pub trait Block {
     fn get_fee(&self) -> U256;
     fn get_type(&self) -> Headers;
     fn validate(&self, prev_block: Option<BlockArc>) -> Result<bool, BlockError>;
+    fn transactions(&self) -> Option<&[Hash]>;
 }
 
 impl Block for DerivativeBlock {
@@ -324,6 +325,10 @@ impl Block for DerivativeBlock {
         }
 
         Ok(true)
+    }
+
+    fn transactions<'a>(&'a self) -> Option<&'a [Hash]> {
+        None
     }
 }
 
@@ -414,6 +419,10 @@ impl Block for TransactionBlock {
         }
 
         Ok(true)
+    }
+
+    fn transactions<'a>(&'a self) -> Option<&'a [Hash]> {
+        Some(&self.transactions)
     }
 }
 
@@ -545,6 +554,10 @@ impl Block for SummarizeBlock {
         }
 
         Ok(true)
+    }
+
+    fn transactions(&self) -> Option<&[Hash]> {
+        None
     }
 }
 
