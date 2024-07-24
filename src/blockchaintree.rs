@@ -394,7 +394,7 @@ impl BlockChainTree {
                 )
             };
 
-        if !tools::check_pow(&prev_hash, &difficulty, pow) {
+        if !tools::check_pow(&prev_hash, &difficulty, &[], pow) {
             return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
         };
         tools::recalculate_difficulty(prev_timestamp, timestamp, &mut difficulty);
@@ -426,7 +426,7 @@ impl BlockChainTree {
             .attach_printable("failed to hash block")?;
 
         let mut difficulty = last_block.get_info().difficulty;
-        if !tools::check_pow(&prev_hash, &difficulty, pow) {
+        if !tools::check_pow(&prev_hash, &difficulty, transactions, pow) {
             return Err(BlockChainTreeError::BlockChainTree(BCTreeErrorKind::WrongPow).into());
         };
         tools::recalculate_difficulty(last_block.get_info().timestamp, timestamp, &mut difficulty);

@@ -319,6 +319,7 @@ impl Block for DerivativeBlock {
         if !check_pow(
             &self.get_merkle_root(),
             &prev_block.get_info().difficulty,
+            self.transactions().unwrap_or(&[]),
             &self.default_info.pow,
         ) {
             return Ok(false);
@@ -413,6 +414,7 @@ impl Block for TransactionBlock {
         if !check_pow(
             &self.merkle_tree_root,
             &prev_block.get_info().difficulty,
+            self.transactions().unwrap_or(&[]),
             &self.default_info.pow,
         ) {
             return Ok(false);
@@ -548,6 +550,7 @@ impl Block for SummarizeBlock {
         if !check_pow(
             &self.merkle_tree_root,
             &prev_block.get_info().difficulty,
+            self.transactions().unwrap_or(&[]),
             &self.default_info.pow,
         ) {
             return Ok(false);

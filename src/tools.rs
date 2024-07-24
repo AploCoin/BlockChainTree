@@ -1,5 +1,7 @@
 use crate::errors::*;
+use crate::merkletree::MerkleTree;
 use crate::static_values::{FEE_STEP, TIME_PER_BLOCK};
+use crate::transaction::{Transaction, Transactionable};
 use crate::types::Hash;
 use error_stack::{Report, Result, ResultExt};
 use num_bigint::BigUint;
@@ -195,9 +197,16 @@ pub fn count_leading_zeros(data: &[u8]) -> u32 {
     to_return
 }
 
-pub fn check_pow(hash: &[u8; 32], difficulty: &[u8; 32], pow: &[u8]) -> bool {
+pub fn check_pow(
+    hash: &[u8; 32],
+    difficulty: &[u8; 32],
+    transactions: &[Hash],
+    pow: &[u8],
+) -> bool {
+    let merkle_tree = MerkleTree::build_tree(transactions);
     let mut hasher = Sha256::new();
     hasher.update(hash);
+    hasher.update(merkle_tree.get_root());
     hasher.update(pow);
     let result: [u8; 32] = hasher.finalize().into();
 
