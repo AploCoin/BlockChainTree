@@ -11,3 +11,5 @@ pub mod tools;
 pub mod transaction;
 pub mod txpool;
 pub mod types;
+
+pub use primitive_types;
